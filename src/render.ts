@@ -18,16 +18,18 @@ export const cyan = paint('36');
  * TTY (CI logs, redirects). Returns the stop function.
  */
 export function spinner(text: string): () => void {
-  if (!process.stderr.isTTY || process.env['NO_COLOR']) return () => {};
+  const isTTY = Boolean((process.stderr.isTTY || process.stdout.isTTY) && !process.env['NO_COLOR']);
+  if (!isTTY) return () => {};
+  const stream = process.stderr.isTTY ? process.stderr : process.stdout;
   const frames = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
   let i = 0;
-  const draw = () => process.stderr.write(`\r${frames[i++ % frames.length]} ${text}`);
+  const draw = () => stream.write(`\r${frames[i++ % frames.length]} ${text}`);
   draw();
   const timer = setInterval(draw, 80);
   timer.unref?.(); // never hold the process open on its own
   return () => {
     clearInterval(timer);
-    process.stderr.write(`\r${' '.repeat(text.length + 2)}\r`);
+    stream.write(`\r${' '.repeat(text.length + 10)}\r`);
   };
 }
 

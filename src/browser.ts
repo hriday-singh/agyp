@@ -57,26 +57,52 @@ export function guestBrowserEnv(env: NodeJS.ProcessEnv = process.env): NodeJS.Pr
 
   const dir = mkdtempSync(join(tmpdir(), 'agyp-browser-'));
   if (process.platform === 'win32') {
-    // pkg/browser calls: rundll32 url.dll,FileProtocolHandler <url>.
-    // The URL is not at a fixed index: cmd splits unquoted arguments on commas
-    // as well as spaces, so `url.dll,FileProtocolHandler` arrives as one
-    // argument when the caller quoted it and as two when it did not — %2 is the
-    // URL in the first case and the string "FileProtocolHandler" in the second.
-    // So scan for the argument that looks like a URL instead. `set "a=%~1"`
-    // keeps the `&` of an OAuth URL inside quotes, where cmd will not read it
-    // as a command separator.
     const cmd = [
       '@echo off',
-      'setlocal',
-      ':next',
-      'if "%~1"=="" goto done',
-      'set "a=%~1"',
-      'if /i not "%a:~0,4%"=="http" shift & goto next',
-      `start "" "${chrome}" --guest "%a%"`,
-      ':done',
+      `for /f "tokens=1,*" %%a in ("%*") do start "" "${chrome}" --guest "%%b"`,
       '',
     ].join('\r\n');
     writeFileSync(join(dir, 'rundll32.cmd'), cmd);
+
+    const cscPaths = [
+      join(process.env['SystemRoot'] ?? 'C:\\Windows', 'Microsoft.NET', 'Framework64', 'v4.0.30319', 'csc.exe'),
+      join(process.env['SystemRoot'] ?? 'C:\\Windows', 'Microsoft.NET', 'Framework', 'v4.0.30319', 'csc.exe'),
+    ];
+    const csc = cscPaths.find((p) => existsSync(p));
+    if (csc) {
+      const csFile = join(dir, 'Program.cs');
+      const exeFile = join(dir, 'rundll32.exe');
+      const csCode = `
+using System;
+using System.Diagnostics;
+
+class Program {
+    static void Main(string[] args) {
+        string url = null;
+        for (int i = 0; i < args.Length; i++) {
+            if (!string.IsNullOrEmpty(args[i]) && args[i].StartsWith("http", StringComparison.OrdinalIgnoreCase)) {
+                url = args[i];
+                break;
+            }
+        }
+        if (url == null && args.Length > 0) {
+            url = args[args.Length - 1];
+        }
+        if (!string.IsNullOrEmpty(url)) {
+            try {
+                Process.Start(new ProcessStartInfo {
+                    FileName = @"${chrome.replace(/"/g, '""')}",
+                    Arguments = "--guest \\"" + url + "\\"",
+                    UseShellExecute = true
+                });
+            } catch {}
+        }
+    }
+}
+`;
+      writeFileSync(csFile, csCode);
+      spawnSync(csc, ['/nologo', `/out:${exeFile}`, csFile], { encoding: 'utf8' });
+    }
   } else {
     // ponytail: one shim per name pkg/browser tries; whichever it picks, it lands here.
     const script = `#!/bin/sh\nexec "${chrome}" --guest "$1" >/dev/null 2>&1 &\n`;

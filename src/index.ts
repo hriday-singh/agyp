@@ -74,7 +74,7 @@ ${bold('OPTIONS')}
   --force             use/run/login: proceed even if agy appears to be running
   --default-browser   login/run: sign in in your normal browser instead of a
                       Chrome guest window
-  -h, --help          This text, or \`agyp help use\` for use vs run
+  -h, --help          This text, or \`agyp help <command>\` for command-specific help
 
 ${bold('EXAMPLES')}
   agyp adopt --label personal      # save the account you are already signed into
@@ -83,6 +83,138 @@ ${bold('EXAMPLES')}
   agyp usage work                  # quota for one account
   agyp run work -- --model gemini-3.1-pro
 `;
+
+const COMMAND_HELP: Record<string, string> = {
+  adopt: `${bold('agyp adopt')} — Save current agy sign-in as a profile
+
+${bold('USAGE')}
+  agyp adopt [--label <name>]
+
+${bold('DESCRIPTION')}
+  Captures the credential currently used by agy and saves it into the vault as a profile.
+  If --label is provided, the short name can be used as a target in other agyp commands.
+
+${bold('OPTIONS')}
+  --label <name>    Set a friendly label for the captured profile.
+`,
+
+  login: `${bold('agyp login')} — Add a new account profile
+
+${bold('USAGE')}
+  agyp login [--label <name>] [--force] [--default-browser] [-- <agy args>]
+
+${bold('DESCRIPTION')}
+  Clears agy's live credential, launches agy so you can sign in to a new account,
+  and captures the result as a new saved profile.
+
+  By default, sign-in opens in an isolated Chrome guest window to avoid interference
+  with your default browser profile.
+
+${bold('OPTIONS')}
+  --label <name>      Set a friendly label for the new profile.
+  --force             Proceed even if agy appears to be currently running.
+  --default-browser   Open sign-in in your default system browser instead of Chrome guest window.
+`,
+
+  list: `${bold('agyp list')} — List all saved profiles
+
+${bold('USAGE')}
+  agyp list [--json]
+  agyp ls [--json]
+
+${bold('DESCRIPTION')}
+  Displays all saved profiles in the vault, indicating which profile agy is currently using,
+  along with labels and last-used dates.
+
+${bold('OPTIONS')}
+  --json    Output machine-readable JSON format.
+`,
+
+  use: `${bold('agyp use')} — Switch agy's active account profile
+
+${bold('USAGE')}
+  agyp use <target> [--force]
+  agyp switch <target> [--force]
+
+${bold('DESCRIPTION')}
+  Swaps agy's live credential with the credential of the specified target profile.
+  Target can be an email, 1-based list index, label, or email prefix.
+
+${USE_VS_RUN}`,
+
+  run: `${bold('agyp run')} — Switch profile and launch agy CLI
+
+${bold('USAGE')}
+  agyp run [target] [--force] [--default-browser] [-- <agy args>]
+  agyp start [target] [--force] [--default-browser] [-- <agy args>]
+
+${bold('DESCRIPTION')}
+  Switches to the target profile (if specified) and launches agy right in your terminal.
+  Everything after '--' is passed directly to agy.
+
+${USE_VS_RUN}`,
+
+  usage: `${bold('agyp usage')} — View model quota and prompt credits
+
+${bold('USAGE')}
+  agyp usage [target] [--all] [--json]
+  agyp quota [target] [--all] [--json]
+
+${bold('DESCRIPTION')}
+  Fetches remaining model quota and prompt credits for saved profiles.
+  Defaults to querying all saved profiles.
+
+${bold('OPTIONS')}
+  --all     Query all saved profiles (default behavior).
+  --json    Output machine-readable JSON snapshot format.
+`,
+
+  update: `${bold('agyp update')} — Update agy CLI and check model lineup changes
+
+${bold('USAGE')}
+  agyp update [--check] [--force]
+
+${bold('DESCRIPTION')}
+  Updates the agy CLI binary and checks if available models or quota tiers have changed.
+
+${bold('OPTIONS')}
+  --check    Only check for model lineup changes without updating agy.
+  --force    Proceed even if agy is currently running.
+`,
+
+  status: `${bold('agyp status')} — Show active profile and sync status
+
+${bold('USAGE')}
+  agyp status [--json]
+
+${bold('DESCRIPTION')}
+  Displays the signed-in account in agy, access token expiration, vault index path,
+  and whether agy's live credential matches a saved profile.
+
+${bold('OPTIONS')}
+  --json    Output machine-readable JSON status format.
+`,
+
+  remove: `${bold('agyp remove')} — Delete a profile and its stored credentials
+
+${bold('USAGE')}
+  agyp remove <target>
+  agyp rm <target>
+
+${bold('DESCRIPTION')}
+  Deletes a profile from the vault index and removes its credentials from the system keyring.
+`,
+
+  doctor: `${bold('agyp doctor')} — Check system health and backend diagnostics
+
+${bold('USAGE')}
+  agyp doctor
+
+${bold('DESCRIPTION')}
+  Verifies OS keyring backend accessibility, agy binary presence on PATH,
+  Node.js version requirements, vault index integrity, and process state.
+`,
+};
 
 const now = () => new Date().toISOString();
 
@@ -190,7 +322,13 @@ async function cmdAdopt(label: string | undefined): Promise<void> {
   const raw = agy.readLiveRaw();
   if (!raw) throw new UserError('agy is not signed in to anything — run `agyp login` instead');
 
-  const { email } = await identify(raw);
+  const stop = spinner('identifying account');
+  let email: string;
+  try {
+    email = (await identify(raw)).email;
+  } finally {
+    stop();
+  }
   const index = loadIndex();
   const existing = index.profiles.find((p) => p.email === email);
   setSecret(email, raw);
@@ -229,7 +367,13 @@ async function cmdLogin(
   agyArgs: string[],
 ): Promise<void> {
   requireIdle(force);
-  let index = await syncBack(loadIndex());
+  const stopSync = spinner('syncing current credential');
+  let index: VaultIndex;
+  try {
+    index = await syncBack(loadIndex());
+  } finally {
+    stopSync();
+  }
 
   const previous = agy.readLiveRaw();
   if (previous) {
@@ -256,7 +400,14 @@ async function cmdLogin(
     throw new UserError('no sign-in detected');
   }
 
-  const { email } = await identify(fresh);
+  const stopIdentify = spinner('identifying new account');
+  let email: string;
+  try {
+    email = (await identify(fresh)).email;
+  } finally {
+    stopIdentify();
+  }
+
   const existing = index.profiles.find((p) => p.email === email);
   setSecret(email, fresh);
   index = upsert(index, {
@@ -273,8 +424,15 @@ async function cmdLogin(
 }
 
 function cmdList(json: boolean): void {
-  const index = loadIndex();
-  const active = activeEmail(index);
+  const stop = spinner('loading profiles');
+  let index: VaultIndex;
+  let active: string | null;
+  try {
+    index = loadIndex();
+    active = activeEmail(index);
+  } finally {
+    stop();
+  }
 
   if (json) {
     console.log(JSON.stringify({ active, profiles: index.profiles }, null, 2));
@@ -295,7 +453,13 @@ function cmdList(json: boolean): void {
 
 async function cmdUse(target: string, force: boolean): Promise<void> {
   requireIdle(force);
-  const index = await syncBack(loadIndex());
+  const stop = spinner('syncing credential');
+  let index: VaultIndex;
+  try {
+    index = await syncBack(loadIndex());
+  } finally {
+    stop();
+  }
   const profile = resolve(index, target);
   saveIndex(install(index, profile));
   console.log(`${green('active')} ${bold(profile.email)}`);
@@ -307,7 +471,13 @@ async function cmdRun(
   defaultBrowser: boolean,
   agyArgs: string[],
 ): Promise<never> {
-  let index = await syncBack(loadIndex());
+  const stop = spinner('syncing credential');
+  let index: VaultIndex;
+  try {
+    index = await syncBack(loadIndex());
+  } finally {
+    stop();
+  }
   if (target) {
     requireIdle(force);
     const profile = resolve(index, target);
@@ -320,7 +490,12 @@ async function cmdRun(
   // guest window as `login` — same reason.
   const code = agy.launchAgy(agyArgs, defaultBrowser ? undefined : (guestBrowserEnv() ?? undefined));
   // agy refreshes (or replaces) its token while running; capture that before exit.
-  saveIndex(await syncBack(loadIndex()));
+  const stopBack = spinner('syncing profile updates');
+  try {
+    saveIndex(await syncBack(loadIndex()));
+  } finally {
+    stopBack();
+  }
   process.exit(code);
 }
 
@@ -464,21 +639,30 @@ async function cmdStatus(json: boolean): Promise<void> {
 }
 
 async function cmdRemove(target: string): Promise<void> {
-  const index = loadIndex();
-  const profile = resolve(index, target);
-  if (activeEmail(index) === profile.email) {
-    warn(`${profile.email} is the account agy is currently using; it stays signed in until you switch or log out`);
+  const stop = spinner(`removing profile ${target}`);
+  let profileEmail = '';
+  try {
+    const index = loadIndex();
+    const profile = resolve(index, target);
+    profileEmail = profile.email;
+    if (activeEmail(index) === profile.email) {
+      warn(`${profile.email} is the account agy is currently using; it stays signed in until you switch or log out`);
+    }
+    delSecret(profile.email);
+    saveIndex({
+      ...index,
+      active: index.active === profile.email ? undefined : index.active,
+      profiles: index.profiles.filter((p) => p.email !== profile.email),
+    });
+  } finally {
+    stop();
   }
-  delSecret(profile.email);
-  saveIndex({
-    ...index,
-    active: index.active === profile.email ? undefined : index.active,
-    profiles: index.profiles.filter((p) => p.email !== profile.email),
-  });
-  console.log(`${green('removed')} ${profile.email}`);
+  console.log(`${green('removed')} ${profileEmail}`);
 }
 
 function cmdDoctor(): void {
+  const stop = spinner('running health checks');
+  stop();
   const backend = keyring.backendAvailable();
   const line = (ok: boolean, text: string) => console.log(`${ok ? green('ok  ') : red('fail')} ${text}`);
 
@@ -511,7 +695,13 @@ async function main(): Promise<void> {
   const { command, positional, flags, options, passthrough } = parseArgs(process.argv.slice(2));
   if (flags.has('help') || command === 'help') {
     const topic = command === 'help' ? positional[0] : command;
-    console.log(topic && ['use', 'run', 'switch', 'start'].includes(topic) ? USE_VS_RUN : HELP);
+    const aliasMap: Record<string, string> = { switch: 'use', start: 'run', ls: 'list', quota: 'usage', rm: 'remove' };
+    const resolvedTopic = topic ? (aliasMap[topic] ?? topic) : undefined;
+    if (resolvedTopic && COMMAND_HELP[resolvedTopic]) {
+      console.log(COMMAND_HELP[resolvedTopic]);
+    } else {
+      console.log(HELP);
+    }
     return;
   }
 

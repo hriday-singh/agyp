@@ -1,0 +1,28 @@
+{
+  "name": "agy-profiler",
+  "version": "0.1.0",
+  "description": "Multi-account profile manager and quota viewer for the Antigravity (agy) CLI",
+  "type": "module",
+  "bin": {
+    "agyp": "dist/index.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "ARCHITECTURE.md"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "dev": "node --experimental-strip-types src/index.ts",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.5",
+    "typescript": "^5.7.3",
+    "vitest": "^2.1.8"
+  }
+}

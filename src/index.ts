@@ -15,6 +15,8 @@ import { fetchEmail, fetchQuota, refreshAccessToken, type Snapshot } from './goo
 import { COMMAND_HELP, HELP } from './help.js';
 import * as keyring from './keyring.js';
 import { bold, cyan, dim, green, red, renderSnapshot, spinner, yellow } from './render.js';
+import { cmdStats, recordUsageSnapshot } from './stats.js';
+import { ALL_COMMAND_NAMES, COMMAND_ALIASES, findBestMatch, formatSuggestion } from './suggest.js';
 import {
   PENDING_ACCOUNT,
   VAULT_SERVICE,
@@ -361,6 +363,7 @@ async function cmdUsage(target: string | undefined, json: boolean): Promise<void
       return;
     }
     snapshots.push(result.value.snapshot);
+    recordUsageSnapshot(result.value.snapshot);
     if (result.value.projectId && result.value.projectId !== profile.projectId) {
       index = upsert(index, { ...profile, projectId: result.value.projectId });
     }
@@ -556,17 +559,11 @@ function cmdDoctor(): void {
 
 async function main(): Promise<void> {
   const { command, positional, flags, options, passthrough } = parseArgs(process.argv.slice(2));
+  const primaryCommand = COMMAND_ALIASES[command] ?? command;
+
   if (flags.has('help') || command === 'help') {
     const topic = command === 'help' ? positional[0] : command;
-    const aliasMap: Record<string, string> = {
-      switch: 'use',
-      start: 'run',
-      ls: 'list',
-      quota: 'usage',
-      rm: 'remove',
-      rename: 'label',
-    };
-    const resolvedTopic = topic ? (aliasMap[topic] ?? topic) : undefined;
+    const resolvedTopic = topic ? (COMMAND_ALIASES[topic] ?? topic) : undefined;
     if (resolvedTopic && COMMAND_HELP[resolvedTopic]) {
       console.log(COMMAND_HELP[resolvedTopic]);
     } else {
@@ -581,43 +578,42 @@ async function main(): Promise<void> {
   const label = options.get('label');
   const target = positional[0];
 
-  if (command !== 'doctor') recoverPending();
+  if (command !== 'doctor' && primaryCommand !== 'doctor') recoverPending();
 
-  switch (command) {
+  switch (primaryCommand) {
     case 'adopt':
       return cmdAdopt(label);
     case 'login':
       return cmdLogin(label, force, defaultBrowser, passthrough);
     case 'list':
-    case 'ls':
       return cmdList(json);
     case 'use':
-    case 'switch':
       if (!target) throw new UserError('use: which profile? `agyp list` to see them');
       return cmdUse(target, force);
     case 'run':
-    case 'start':
       await cmdRun(target, force, defaultBrowser, passthrough);
       return;
     case 'usage':
-    case 'quota':
       return cmdUsage(flags.has('all') ? undefined : target, json);
     case 'update':
       return cmdUpdate(flags.has('check'), force);
     case 'status':
       return cmdStatus(json);
     case 'label':
-    case 'rename':
       if (!target) throw new UserError('label: which profile? `agyp list` to see them');
       return cmdLabel(target, positional[1], flags.has('clear'));
     case 'remove':
-    case 'rm':
       if (!target) throw new UserError('remove: which profile?');
       return cmdRemove(target);
     case 'doctor':
       return cmdDoctor();
-    default:
-      throw new UserError(`unknown command "${command}" — try \`agyp help\``);
+    case 'stats':
+      return cmdStats(json, flags.has('reset'));
+    default: {
+      const bestMatch = findBestMatch(command, ALL_COMMAND_NAMES);
+      const suggestion = formatSuggestion(command, bestMatch);
+      throw new UserError(`unknown command "${command}"${suggestion} — try \`agyp help\``);
+    }
   }
 }
 

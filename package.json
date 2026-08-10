@@ -9,10 +9,20 @@
   "engines": {
     "node": ">=18"
   },
+  "license": "MIT",
+  "keywords": [
+    "antigravity",
+    "agy",
+    "profile-manager",
+    "cli",
+    "multi-account",
+    "quota"
+  ],
   "files": [
     "dist",
     "README.md",
-    "ARCHITECTURE.md"
+    "ARCHITECTURE.md",
+    "LICENSE"
   ],
   "scripts": {
     "build": "tsc",

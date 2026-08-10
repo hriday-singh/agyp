@@ -58,7 +58,7 @@ export function renderSnapshot(snapshot: Snapshot): string {
 
   if (snapshot.promptCredits) {
     const { available, monthly, remainingPercentage } = snapshot.promptCredits;
-    lines.push(`  ${'Prompt credits'.padEnd(28)} ${bar(remainingPercentage)} ${available}/${monthly}`);
+    lines.push(`  ${'Prompt credits'.padEnd(34)} ${bar(remainingPercentage)} ${available}/${monthly}`);
   }
 
   if (snapshot.models.length === 0) {
@@ -67,13 +67,13 @@ export function renderSnapshot(snapshot: Snapshot): string {
   }
 
   for (const model of snapshot.models) {
-    const name = model.label.length > 28 ? model.label.slice(0, 27) + '…' : model.label;
+    const name = model.label.length > 32 ? model.label.slice(0, 31) + '…' : model.label;
     const fraction = model.remainingPercentage;
     const gauge = fraction === undefined ? dim('─'.repeat(20)) : bar(fraction);
     const pct = fraction === undefined ? dim('   n/a') : `${(fraction * 100).toFixed(0).padStart(4)}%`;
     const reset = model.timeUntilResetMs ? dim(`resets in ${humanDuration(model.timeUntilResetMs)}`) : '';
     const flag = model.isExhausted ? red(' EXHAUSTED') : '';
-    lines.push(`  ${name.padEnd(28)} ${gauge} ${pct}  ${reset}${flag}`);
+    lines.push(`  ${name.padEnd(34)} ${gauge} ${pct}  ${reset}${flag}`);
   }
   return lines.join('\n');
 }

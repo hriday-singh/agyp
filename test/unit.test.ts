@@ -10,6 +10,8 @@ import { COMMAND_HELP, HELP } from '../src/help.js';
 import { validateLabel } from '../src/index.js';
 import { winTarget } from '../src/keyring.js';
 import { bar, humanDuration } from '../src/render.js';
+import { calculatePlanStats, clearUsageCache, loadUsageCache, recordUsageSnapshot } from '../src/stats.js';
+import { COMMAND_ALIASES, findBestMatch, levenshtein } from '../src/suggest.js';
 import { fingerprint, resolve, upsert, type VaultIndex } from '../src/vault.js';
 
 describe('parseArgs', () => {
@@ -295,5 +297,83 @@ describe('help text', () => {
     expect(HELP).toContain('label <target> [name]');
     expect(COMMAND_HELP.label).toContain('agyp label');
     expect(COMMAND_HELP.label).toContain('agyp rename');
+    expect(COMMAND_HELP.stats).toContain('agyp stats');
+  });
+});
+
+describe('command aliases', () => {
+  it('maps common aliases to primary commands', () => {
+    expect(COMMAND_ALIASES.save).toBe('adopt');
+    expect(COMMAND_ALIASES.add).toBe('login');
+    expect(COMMAND_ALIASES.show).toBe('list');
+    expect(COMMAND_ALIASES.select).toBe('use');
+    expect(COMMAND_ALIASES.exec).toBe('run');
+    expect(COMMAND_ALIASES.credits).toBe('usage');
+    expect(COMMAND_ALIASES.upgrade).toBe('update');
+    expect(COMMAND_ALIASES.info).toBe('status');
+    expect(COMMAND_ALIASES.tag).toBe('label');
+    expect(COMMAND_ALIASES.delete).toBe('remove');
+    expect(COMMAND_ALIASES.check).toBe('doctor');
+    expect(COMMAND_ALIASES.metrics).toBe('stats');
+  });
+});
+
+describe('Did You Mean suggestions', () => {
+  it('calculates Levenshtein edit distance', () => {
+    expect(levenshtein('status', 'statuss')).toBe(1);
+    expect(levenshtein('login', 'logn')).toBe(1);
+    expect(levenshtein('cat', 'dog')).toBe(3);
+  });
+
+  it('finds best matching candidate', () => {
+    expect(findBestMatch('statuss', ['status', 'list', 'run'])).toBe('status');
+    expect(findBestMatch('personl', ['personal', 'work'])).toBe('personal');
+    expect(findBestMatch('xyz123', ['status', 'list'])).toBeNull();
+  });
+
+  it('suggests closest match when profile target is not found in resolve()', () => {
+    expect(() => resolve(index, 'personl')).toThrow(/did you mean "personal"\?/);
+    expect(() => resolve(index, 'bo')).toBeDefined(); // matches bob@gmail.com by prefix!
+  });
+});
+
+describe('usage & plan statistics', () => {
+  it('calculates plan statistics across accounts', () => {
+    const stats = calculatePlanStats([
+      {
+        email: 'pro@gmail.com',
+        planType: 'Google AI Pro',
+        promptCredits: { available: 80, monthly: 100, remainingPercentage: 0.8 },
+        models: [{ label: 'Gemini 3.1 Pro', modelIds: ['gemini-3.1-pro'], remainingPercentage: 1, isExhausted: false }],
+      },
+      {
+        email: 'free@gmail.com',
+        planType: 'Free Tier',
+        models: [{ label: 'Gemini 3.1 Pro', modelIds: ['gemini-3.1-pro'], remainingPercentage: 0, isExhausted: true }],
+      },
+    ]);
+
+    expect(stats.totalProfiles).toBe(2);
+    expect(stats.plans['Google AI Pro']).toBe(1);
+    expect(stats.plans['Free Tier']).toBe(1);
+    expect(stats.totalAvailableCredits).toBe(80);
+    expect(stats.totalMonthlyCredits).toBe(100);
+    expect(stats.bestProfileForUse?.email).toBe('pro@gmail.com');
+  });
+
+  it('caches and clears usage snapshots', () => {
+    clearUsageCache();
+    recordUsageSnapshot({
+      email: 'user@gmail.com',
+      planType: 'Google AI Pro',
+      models: [],
+    });
+
+    const cache = loadUsageCache();
+    expect(cache.snapshots['user@gmail.com']?.planType).toBe('Google AI Pro');
+
+    clearUsageCache();
+    const cleared = loadUsageCache();
+    expect(Object.keys(cleared.snapshots)).toHaveLength(0);
   });
 });

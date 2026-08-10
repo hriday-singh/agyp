@@ -23,18 +23,18 @@ ${bold('USAGE')}
   A ${bold('target')} is an email, a list number, a label, or an email prefix.
 
 ${bold('COMMANDS')}
-  adopt [--label <name>]     Save the account agy is logged in as right now as a profile
-  login [--label <name>]     Add an account: clears agy's credential, runs agy so you can
-                             sign in, then captures the result as a new profile
-  list                       List profiles and show which one agy is using
-  use <target>               Make a profile agy's active account
-  run [target] [-- args]     Switch to a profile (if given) and launch agy
-  usage [target]             Show model quota. Default: every saved profile
-  update [--check]           Update the agy CLI, then report which models changed
-  status                     What agy is authenticated as, and whether it is in sync
-  label <target> [name]      Set, update, or clear (--clear) a profile's label
-  remove <target>            Forget a profile (its tokens are deleted from the keyring)
-  doctor                     Check keyring backend, agy binary, vault state
+  adopt [--label <name>]     Save current agy login as profile (aliases: save, capture, claim)
+  login [--label <name>]     Add a new account profile (aliases: add, signin, auth)
+  list                       List saved profiles and active one (aliases: ls, show, all)
+  use <target>               Make a profile agy's active account (aliases: switch, select, set)
+  run [target] [-- args]     Switch profile and launch agy CLI (aliases: start, exec, launch)
+  usage [target]             Show model quota (aliases: quota, credits, limits)
+  update [--check]           Update agy CLI and check model lineup (aliases: upgrade, sync-models)
+  status                     Show active profile and sync status (aliases: info, st, whoami)
+  label <target> [name]      Set, update, or clear profile label (aliases: rename, tag, alias)
+  remove <target>            Delete a profile (aliases: rm, delete, del, unlink)
+  doctor                     Check system health and diagnostics (aliases: check, health)
+  stats                      Usage & subscription plan statistics across profiles (aliases: plan, statistics, metrics)
 
 ${USE_VS_RUN}
 ${bold('OPTIONS')}
@@ -203,5 +203,21 @@ ${bold('USAGE')}
 ${bold('DESCRIPTION')}
   Verifies OS keyring backend accessibility, agy binary presence on PATH,
   Node.js version requirements, vault index integrity, and process state.
+`,
+
+  stats: `${bold('agyp stats')} — View model quota, prompt credits, and plan statistics
+
+${bold('USAGE')}
+  agyp stats [--json] [--reset]
+  agyp plan [--json] [--reset]
+  agyp statistics [--json] [--reset]
+
+${bold('DESCRIPTION')}
+  Displays aggregate usage statistics across all saved accounts: subscription plans/tiers,
+  combined prompt credits, average model quota capacity, and account recommendations.
+
+${bold('OPTIONS')}
+  --json     Output machine-readable JSON stats format.
+  --reset    Clear cached usage statistics.
 `,
 };

@@ -13,6 +13,7 @@ import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
+import { findBestMatch, formatSuggestion } from './suggest.js';
 import * as keyring from './keyring.js';
 
 export const VAULT_SERVICE = 'agy-profiler';
@@ -100,7 +101,14 @@ export function resolve(index: VaultIndex, target: string): ProfileMeta {
   if (matches.length > 1) {
     throw new Error(`"${target}" matches ${matches.map((m) => m.email).join(', ')} — be more specific`);
   }
-  throw new Error(`no profile matching "${target}" — run \`agyp list\``);
+  const candidates: string[] = [];
+  for (const p of index.profiles) {
+    candidates.push(p.email);
+    if (p.label) candidates.push(p.label);
+  }
+  const bestMatch = findBestMatch(target, candidates);
+  const suggestion = formatSuggestion(target, bestMatch);
+  throw new Error(`no profile matching "${target}"${suggestion} — run \`agyp list\``);
 }
 
 export function upsert(index: VaultIndex, meta: ProfileMeta): VaultIndex {

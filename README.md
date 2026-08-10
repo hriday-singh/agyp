@@ -71,17 +71,18 @@ Rule of thumb: `use` to change the default account, `run` to start a session now
 
 | Command | What it does |
 | --- | --- |
-| `agyp adopt [--label <name>]` | Save whatever account `agy` is signed into right now as a profile |
-| `agyp login [--label <name>]` | Add an account: clears `agy`'s credential, runs `agy` so you can sign in (in a Chrome guest window), captures the result |
-| `agyp list` | Profiles, with a `●` on the one `agy` is using |
-| `agyp use <target>` | Make a profile the active account |
-| `agyp run [target] [-- args]` | Switch (if a target is given) and launch `agy`; anything after `--` is passed to `agy` |
-| `agyp usage [target]` | Model quota and reset timers. No target = every profile |
-| `agyp update [--check]` | Update the `agy` CLI, then report which models were added, renamed or removed. `--check` reports without updating |
-| `agyp status` | What `agy` is authenticated as, and whether it matches a saved profile |
-| `agyp label <target> [name]` | Set, update (e.g. `agyp label 1 hello`, alias: `agyp rename`), or remove (`--clear`) a profile's label |
-| `agyp remove <target>` | Forget a profile and delete its tokens from the keyring |
-| `agyp doctor` | Keyring backend, `agy` binary, vault health |
+| `agyp adopt [--label <name>]` | Save whatever account `agy` is signed into right now as a profile (aliases: `save`, `capture`) |
+| `agyp login [--label <name>]` | Add an account: clears `agy`'s credential, runs `agy` so you can sign in (in a Chrome guest window), captures the result (aliases: `add`, `signin`) |
+| `agyp list` | Profiles, with a `●` on the one `agy` is using (aliases: `ls`, `show`, `all`) |
+| `agyp use <target>` | Make a profile the active account (aliases: `switch`, `select`, `set`) |
+| `agyp run [target] [-- args]` | Switch (if a target is given) and launch `agy`; anything after `--` is passed to `agy` (aliases: `start`, `exec`) |
+| `agyp usage [target]` | Model quota and reset timers. No target = every profile (aliases: `quota`, `credits`) |
+| `agyp plan` | Aggregate plan statistics, combined prompt credits, model quota pools, and recommended account (aliases: `stats`, `statistics`) |
+| `agyp update [--check]` | Update the `agy` CLI, then report which models were added, renamed or removed (aliases: `upgrade`) |
+| `agyp status` | What `agy` is authenticated as, and whether it matches a saved profile (aliases: `info`, `st`, `whoami`) |
+| `agyp label <target> [name]` | Set, update (e.g. `agyp label 1 hello`, alias: `rename`, `tag`), or remove (`--clear`) a profile's label |
+| `agyp remove <target>` | Forget a profile and delete its tokens from the keyring (aliases: `rm`, `delete`, `del`) |
+| `agyp doctor` | Keyring backend, `agy` binary, vault health (aliases: `check`, `health`) |
 
 A **target** is an email, a list number, a label, or an unambiguous email prefix —
 `agyp use 2`, `agyp use work`, and `agyp use you.work@gmail.com` are the same thing.

@@ -6,6 +6,8 @@ import { chromePath, guestBrowserEnv } from '../src/browser.js';
 import { UserError, parseArgs } from '../src/args.js';
 import { catalogFromSnapshot, describeDiff, diffCatalog, isEmptyDiff } from '../src/catalog.js';
 import { parseSnapshot, shouldShowModel } from '../src/google.js';
+import { COMMAND_HELP, HELP } from '../src/help.js';
+import { validateLabel } from '../src/index.js';
 import { winTarget } from '../src/keyring.js';
 import { bar, humanDuration } from '../src/render.js';
 import { fingerprint, resolve, upsert, type VaultIndex } from '../src/vault.js';
@@ -26,6 +28,21 @@ describe('parseArgs', () => {
     expect(parsed.positional).toEqual([]);
   });
 
+  it('parses label and rename positional commands', () => {
+    const p1 = parseArgs(['label', '1', 'work']);
+    expect(p1.command).toBe('label');
+    expect(p1.positional).toEqual(['1', 'work']);
+
+    const p2 = parseArgs(['rename', 'personal', 'work']);
+    expect(p2.command).toBe('rename');
+    expect(p2.positional).toEqual(['personal', 'work']);
+
+    const p3 = parseArgs(['label', 'personal', '--clear']);
+    expect(p3.command).toBe('label');
+    expect(p3.positional).toEqual(['personal']);
+    expect(p3.flags.has('clear')).toBe(true);
+  });
+
   it('rejects --label with no value', () => {
     expect(() => parseArgs(['login', '--label'])).toThrow(UserError);
   });
@@ -44,6 +61,23 @@ const index: VaultIndex = {
     { email: 'bob@gmail.com', fingerprint: 'cccc', addedAt: '2026-01-01T00:00:00Z' },
   ],
 };
+
+describe('validateLabel', () => {
+  it('accepts valid labels and trims whitespace', () => {
+    expect(validateLabel('  hello  ')).toBe('hello');
+    expect(validateLabel('work-1')).toBe('work-1');
+  });
+
+  it('rejects labels that are numbers only', () => {
+    expect(() => validateLabel('123')).toThrow(/numbers only/);
+    expect(() => validateLabel('1')).toThrow(/numbers only/);
+  });
+
+  it('rejects duplicate labels', () => {
+    expect(() => validateLabel('personal', 'bob@gmail.com', index)).toThrow(/already used/);
+    expect(validateLabel('personal', 'alice@gmail.com', index)).toBe('personal');
+  });
+});
 
 describe('resolve', () => {
   it('matches exact email, 1-based index and label', () => {
@@ -253,5 +287,13 @@ describe('guest browser shim', () => {
       expect(script).not.toContain('%~2');
       expect(script).toContain('tokens=1,*');
     }
+  });
+});
+
+describe('help text', () => {
+  it('includes label command in general and command help', () => {
+    expect(HELP).toContain('label <target> [name]');
+    expect(COMMAND_HELP.label).toContain('agyp label');
+    expect(COMMAND_HELP.label).toContain('agyp rename');
   });
 });

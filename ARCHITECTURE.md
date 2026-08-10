@@ -51,6 +51,7 @@ third-party `antigravity-usage` npm package. We do not read or write it.
 ```
 src/
   index.ts     command dispatch and the workflows (the only file with policy in it)
+  help.ts      CLI help text and command descriptions
   agy.ts       the live credential, process detection, launching agy
   vault.ts     profile storage: keyring for secrets, JSON index for metadata
   keyring.ts   the one place that knows about Credential Manager / libsecret / Keychain
@@ -262,7 +263,7 @@ rendering. Keyring and network calls are not mocked — mocking them would test
 the mocks. Exercise those with `agyp doctor`, `agyp adopt`, and `agyp usage`
 against a real account.
 
-Exercised for real on Windows: `doctor`, `adopt`, `list`, `status`, `usage`, and
+Exercised for real on Windows: `doctor`, `adopt`, `list`, `status`, `usage`, `label`/`rename`, and
 `update --check` (including a simulated add/rename/remove). Not yet exercised:
 `login`, `use`, `run`, and `update` without `--check` — all of them write the live
 credential or replace the agy binary, which needs a second account and a closed

@@ -43,10 +43,12 @@ with `gnome-keyring` or `kwallet` running. `agyp doctor` tells you if it is not.
 agyp adopt --label personal   # save the account you are already signed into
 agyp login --label work       # add a second one (signs you in through agy)
 agyp list                     # see them, and which one is live
-agyp use work                 # switch
+agyp label 1 hello            # set profile #1's label to "hello"
+agyp label work job           # rename label "work" to "job"
+agyp use job                  # switch
 agyp run personal             # switch and launch agy in one go
 agyp usage                    # quota for every account (default)
-agyp usage work               # quota for one of them
+agyp usage job                # quota for one of them
 ```
 
 `adopt` first — it captures your existing session, so you never have to re-login
@@ -77,11 +79,13 @@ Rule of thumb: `use` to change the default account, `run` to start a session now
 | `agyp usage [target]` | Model quota and reset timers. No target = every profile |
 | `agyp update [--check]` | Update the `agy` CLI, then report which models were added, renamed or removed. `--check` reports without updating |
 | `agyp status` | What `agy` is authenticated as, and whether it matches a saved profile |
+| `agyp label <target> [name]` | Set, update (e.g. `agyp label 1 hello`, alias: `agyp rename`), or remove (`--clear`) a profile's label |
 | `agyp remove <target>` | Forget a profile and delete its tokens from the keyring |
 | `agyp doctor` | Keyring backend, `agy` binary, vault health |
 
 A **target** is an email, a list number, a label, or an unambiguous email prefix —
 `agyp use 2`, `agyp use work`, and `agyp use you.work@gmail.com` are the same thing.
+Labels cannot be numbers only (e.g. `"123"` is rejected because numbers resolve to list positions).
 
 `--json` works on `list`, `usage`, and `status`. `--all` on `usage` still works; it
 is now the default.

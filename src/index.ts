@@ -12,6 +12,7 @@ import { UserError, parseArgs } from './args.js';
 import { guestBrowserEnv } from './browser.js';
 import { describeDiff, trackCatalog } from './catalog.js';
 import { fetchEmail, fetchQuota, refreshAccessToken, type Snapshot } from './google.js';
+import { COMMAND_HELP, HELP } from './help.js';
 import * as keyring from './keyring.js';
 import { bold, cyan, dim, green, red, renderSnapshot, spinner, yellow } from './render.js';
 import {
@@ -29,192 +30,6 @@ import {
   type ProfileMeta,
   type VaultIndex,
 } from './vault.js';
-
-const USE_VS_RUN = `${bold('USE vs RUN')}
-  ${bold('use')} only swaps the credential and exits. agy is not started; the next time you
-  start agy yourself — from any terminal, or from the Antigravity editor — it comes
-  up as that account, and stays there until you switch again. It refuses to run
-  while agy is open, because a running agy rewrites the credential on token
-  refresh and would undo the swap.
-
-  ${bold('run')} swaps (only if you name a target) and then launches agy right there,
-  attached to your terminal. Everything after ${bold('--')} is handed to agy untouched.
-  When agy exits, any token it refreshed is written back to that profile. With no
-  target it launches agy as whoever is already active.
-
-  Rule of thumb: ${bold('use')} to change the default account, ${bold('run')} to start a session now.
-`;
-
-const HELP = `${bold('agyp')} — profile manager for the Antigravity CLI
-
-${bold('USAGE')}
-  agyp <command> [target] [options]
-
-  A ${bold('target')} is an email, a list number, a label, or an email prefix.
-
-${bold('COMMANDS')}
-  adopt [--label <name>]     Save the account agy is logged in as right now as a profile
-  login [--label <name>]     Add an account: clears agy's credential, runs agy so you can
-                             sign in, then captures the result as a new profile
-  list                       List profiles and show which one agy is using
-  use <target>               Make a profile agy's active account
-  run [target] [-- args]     Switch to a profile (if given) and launch agy
-  usage [target]             Show model quota. Default: every saved profile
-  update [--check]           Update the agy CLI, then report which models changed
-  status                     What agy is authenticated as, and whether it is in sync
-  remove <target>            Forget a profile (its tokens are deleted from the keyring)
-  doctor                     Check keyring backend, agy binary, vault state
-
-${USE_VS_RUN}
-${bold('OPTIONS')}
-  --all               usage: every saved profile (the default; kept for habit)
-  --check             update: only report model changes, do not update agy
-  --json              usage/list/status: machine-readable output
-  --label             adopt/login: a short name you can use as a target
-  --force             use/run/login: proceed even if agy appears to be running
-  --default-browser   login/run: sign in in your normal browser instead of a
-                      Chrome guest window
-  -h, --help          This text, or \`agyp help <command>\` for command-specific help
-
-${bold('EXAMPLES')}
-  agyp adopt --label personal      # save the account you are already signed into
-  agyp login --label work          # add a second account, in a guest Chrome window
-  agyp usage                       # quota across every account
-  agyp usage work                  # quota for one account
-  agyp run work -- --model gemini-3.1-pro
-`;
-
-const COMMAND_HELP: Record<string, string> = {
-  adopt: `${bold('agyp adopt')} — Save current agy sign-in as a profile
-
-${bold('USAGE')}
-  agyp adopt [--label <name>]
-
-${bold('DESCRIPTION')}
-  Captures the credential currently used by agy and saves it into the vault as a profile.
-  If --label is provided, the short name can be used as a target in other agyp commands.
-
-${bold('OPTIONS')}
-  --label <name>    Set a friendly label for the captured profile.
-`,
-
-  login: `${bold('agyp login')} — Add a new account profile
-
-${bold('USAGE')}
-  agyp login [--label <name>] [--force] [--default-browser] [-- <agy args>]
-
-${bold('DESCRIPTION')}
-  Clears agy's live credential, launches agy so you can sign in to a new account,
-  and captures the result as a new saved profile.
-
-  By default, sign-in opens in an isolated Chrome guest window to avoid interference
-  with your default browser profile.
-
-${bold('OPTIONS')}
-  --label <name>      Set a friendly label for the new profile.
-  --force             Proceed even if agy appears to be currently running.
-  --default-browser   Open sign-in in your default system browser instead of Chrome guest window.
-`,
-
-  list: `${bold('agyp list')} — List all saved profiles
-
-${bold('USAGE')}
-  agyp list [--json]
-  agyp ls [--json]
-
-${bold('DESCRIPTION')}
-  Displays all saved profiles in the vault, indicating which profile agy is currently using,
-  along with labels and last-used dates.
-
-${bold('OPTIONS')}
-  --json    Output machine-readable JSON format.
-`,
-
-  use: `${bold('agyp use')} — Switch agy's active account profile
-
-${bold('USAGE')}
-  agyp use <target> [--force]
-  agyp switch <target> [--force]
-
-${bold('DESCRIPTION')}
-  Swaps agy's live credential with the credential of the specified target profile.
-  Target can be an email, 1-based list index, label, or email prefix.
-
-${USE_VS_RUN}`,
-
-  run: `${bold('agyp run')} — Switch profile and launch agy CLI
-
-${bold('USAGE')}
-  agyp run [target] [--force] [--default-browser] [-- <agy args>]
-  agyp start [target] [--force] [--default-browser] [-- <agy args>]
-
-${bold('DESCRIPTION')}
-  Switches to the target profile (if specified) and launches agy right in your terminal.
-  Everything after '--' is passed directly to agy.
-
-${USE_VS_RUN}`,
-
-  usage: `${bold('agyp usage')} — View model quota and prompt credits
-
-${bold('USAGE')}
-  agyp usage [target] [--all] [--json]
-  agyp quota [target] [--all] [--json]
-
-${bold('DESCRIPTION')}
-  Fetches remaining model quota and prompt credits for saved profiles.
-  Defaults to querying all saved profiles.
-
-${bold('OPTIONS')}
-  --all     Query all saved profiles (default behavior).
-  --json    Output machine-readable JSON snapshot format.
-`,
-
-  update: `${bold('agyp update')} — Update agy CLI and check model lineup changes
-
-${bold('USAGE')}
-  agyp update [--check] [--force]
-
-${bold('DESCRIPTION')}
-  Updates the agy CLI binary and checks if available models or quota tiers have changed.
-
-${bold('OPTIONS')}
-  --check    Only check for model lineup changes without updating agy.
-  --force    Proceed even if agy is currently running.
-`,
-
-  status: `${bold('agyp status')} — Show active profile and sync status
-
-${bold('USAGE')}
-  agyp status [--json]
-
-${bold('DESCRIPTION')}
-  Displays the signed-in account in agy, access token expiration, vault index path,
-  and whether agy's live credential matches a saved profile.
-
-${bold('OPTIONS')}
-  --json    Output machine-readable JSON status format.
-`,
-
-  remove: `${bold('agyp remove')} — Delete a profile and its stored credentials
-
-${bold('USAGE')}
-  agyp remove <target>
-  agyp rm <target>
-
-${bold('DESCRIPTION')}
-  Deletes a profile from the vault index and removes its credentials from the system keyring.
-`,
-
-  doctor: `${bold('agyp doctor')} — Check system health and backend diagnostics
-
-${bold('USAGE')}
-  agyp doctor
-
-${bold('DESCRIPTION')}
-  Verifies OS keyring backend accessibility, agy binary presence on PATH,
-  Node.js version requirements, vault index integrity, and process state.
-`,
-};
 
 const now = () => new Date().toISOString();
 
@@ -316,6 +131,22 @@ function install(index: VaultIndex, profile: ProfileMeta): VaultIndex {
   return { ...upsert(index, { ...profile, lastUsed: now() }), active: profile.email };
 }
 
+export function validateLabel(label: string, currentEmail?: string, index?: VaultIndex): string {
+  const trimmed = label.trim();
+  if (/^\d+$/.test(trimmed)) {
+    throw new UserError('labels cannot be numbers only');
+  }
+  if (index) {
+    const duplicate = index.profiles.find(
+      (p) => p.email !== currentEmail && p.label?.toLowerCase() === trimmed.toLowerCase(),
+    );
+    if (duplicate) {
+      throw new UserError(`label "${trimmed}" is already used by ${duplicate.email}`);
+    }
+  }
+  return trimmed;
+}
+
 // ---------------------------------------------------------------- commands
 
 async function cmdAdopt(label: string | undefined): Promise<void> {
@@ -330,18 +161,19 @@ async function cmdAdopt(label: string | undefined): Promise<void> {
     stop();
   }
   const index = loadIndex();
+  const validLabel = label ? validateLabel(label, email, index) : undefined;
   const existing = index.profiles.find((p) => p.email === email);
   setSecret(email, raw);
   const meta: ProfileMeta = {
     email,
-    label: label ?? existing?.label,
+    label: validLabel ?? existing?.label,
     fingerprint: fingerprint(agy.parseBlob(raw).token.refresh_token),
     projectId: existing?.projectId,
     addedAt: existing?.addedAt ?? now(),
     lastUsed: now(),
   };
   saveIndex({ ...upsert(index, meta), active: email });
-  console.log(`${green('saved')} ${bold(email)}${label ? dim(` (${label})`) : ''}`);
+  console.log(`${green('saved')} ${bold(email)}${validLabel ? dim(` (${validLabel})`) : ''}`);
 }
 
 /**
@@ -408,11 +240,12 @@ async function cmdLogin(
     stopIdentify();
   }
 
+  const validLabel = label ? validateLabel(label, email, index) : undefined;
   const existing = index.profiles.find((p) => p.email === email);
   setSecret(email, fresh);
   index = upsert(index, {
     email,
-    label: label ?? existing?.label,
+    label: validLabel ?? existing?.label,
     fingerprint: fingerprint(agy.parseBlob(fresh).token.refresh_token),
     projectId: existing?.projectId,
     addedAt: existing?.addedAt ?? now(),
@@ -660,6 +493,36 @@ async function cmdRemove(target: string): Promise<void> {
   console.log(`${green('removed')} ${profileEmail}`);
 }
 
+export function cmdLabel(target: string, newLabel: string | undefined, clear: boolean): void {
+  const index = loadIndex();
+  const profile = resolve(index, target);
+
+  if (clear) {
+    if (!profile.label) {
+      console.log(dim(`${profile.email} has no label to clear`));
+      return;
+    }
+    const updated = { ...profile, label: undefined };
+    saveIndex(upsert(index, updated));
+    console.log(`${green('cleared label')} for ${bold(profile.email)}`);
+    return;
+  }
+
+  if (newLabel !== undefined && newLabel !== '') {
+    const valid = validateLabel(newLabel, profile.email, index);
+    const updated = { ...profile, label: valid };
+    saveIndex(upsert(index, updated));
+    console.log(`${green('labeled')} ${bold(profile.email)} as ${cyan(valid)}`);
+    return;
+  }
+
+  if (profile.label) {
+    console.log(`${bold(profile.email)} is labeled ${cyan(profile.label)}`);
+  } else {
+    console.log(`${bold(profile.email)} has no label`);
+  }
+}
+
 function cmdDoctor(): void {
   const stop = spinner('running health checks');
   stop();
@@ -695,7 +558,14 @@ async function main(): Promise<void> {
   const { command, positional, flags, options, passthrough } = parseArgs(process.argv.slice(2));
   if (flags.has('help') || command === 'help') {
     const topic = command === 'help' ? positional[0] : command;
-    const aliasMap: Record<string, string> = { switch: 'use', start: 'run', ls: 'list', quota: 'usage', rm: 'remove' };
+    const aliasMap: Record<string, string> = {
+      switch: 'use',
+      start: 'run',
+      ls: 'list',
+      quota: 'usage',
+      rm: 'remove',
+      rename: 'label',
+    };
     const resolvedTopic = topic ? (aliasMap[topic] ?? topic) : undefined;
     if (resolvedTopic && COMMAND_HELP[resolvedTopic]) {
       console.log(COMMAND_HELP[resolvedTopic]);
@@ -736,6 +606,10 @@ async function main(): Promise<void> {
       return cmdUpdate(flags.has('check'), force);
     case 'status':
       return cmdStatus(json);
+    case 'label':
+    case 'rename':
+      if (!target) throw new UserError('label: which profile? `agyp list` to see them');
+      return cmdLabel(target, positional[1], flags.has('clear'));
     case 'remove':
     case 'rm':
       if (!target) throw new UserError('remove: which profile?');

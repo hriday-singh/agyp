@@ -1,0 +1,207 @@
+import { bold } from './render.js';
+
+export const USE_VS_RUN = `${bold('USE vs RUN')}
+  ${bold('use')} only swaps the credential and exits. agy is not started; the next time you
+  start agy yourself — from any terminal, or from the Antigravity editor — it comes
+  up as that account, and stays there until you switch again. It refuses to run
+  while agy is open, because a running agy rewrites the credential on token
+  refresh and would undo the swap.
+
+  ${bold('run')} swaps (only if you name a target) and then launches agy right there,
+  attached to your terminal. Everything after ${bold('--')} is handed to agy untouched.
+  When agy exits, any token it refreshed is written back to that profile. With no
+  target it launches agy as whoever is already active.
+
+  Rule of thumb: ${bold('use')} to change the default account, ${bold('run')} to start a session now.
+`;
+
+export const HELP = `${bold('agyp')} — profile manager for the Antigravity CLI
+
+${bold('USAGE')}
+  agyp <command> [target] [options]
+
+  A ${bold('target')} is an email, a list number, a label, or an email prefix.
+
+${bold('COMMANDS')}
+  adopt [--label <name>]     Save the account agy is logged in as right now as a profile
+  login [--label <name>]     Add an account: clears agy's credential, runs agy so you can
+                             sign in, then captures the result as a new profile
+  list                       List profiles and show which one agy is using
+  use <target>               Make a profile agy's active account
+  run [target] [-- args]     Switch to a profile (if given) and launch agy
+  usage [target]             Show model quota. Default: every saved profile
+  update [--check]           Update the agy CLI, then report which models changed
+  status                     What agy is authenticated as, and whether it is in sync
+  label <target> [name]      Set, update, or clear (--clear) a profile's label
+  remove <target>            Forget a profile (its tokens are deleted from the keyring)
+  doctor                     Check keyring backend, agy binary, vault state
+
+${USE_VS_RUN}
+${bold('OPTIONS')}
+  --all               usage: every saved profile (the default; kept for habit)
+  --check             update: only report model changes, do not update agy
+  --json              usage/list/status: machine-readable output
+  --label             adopt/login: a short name you can use as a target
+  --clear             label: remove a profile's label
+  --force             use/run/login: proceed even if agy appears to be running
+  --default-browser   login/run: sign in in your normal browser instead of a
+                      Chrome guest window
+  -h, --help          This text, or \`agyp help <command>\` for command-specific help
+
+${bold('EXAMPLES')}
+  agyp adopt --label personal      # save the account you are already signed into
+  agyp login --label work          # add a second account, in a guest Chrome window
+  agyp label 1 hello               # label profile #1 as "hello"
+  agyp label work personal         # rename label "work" to "personal"
+  agyp label personal --clear      # remove label from personal profile
+  agyp usage                       # quota across every account
+  agyp usage work                  # quota for one account
+  agyp run work -- --model gemini-3.1-pro
+`;
+
+export const COMMAND_HELP: Record<string, string> = {
+  adopt: `${bold('agyp adopt')} — Save current agy sign-in as a profile
+
+${bold('USAGE')}
+  agyp adopt [--label <name>]
+
+${bold('DESCRIPTION')}
+  Captures the credential currently used by agy and saves it into the vault as a profile.
+  If --label is provided, the short name can be used as a target in other agyp commands.
+
+${bold('OPTIONS')}
+  --label <name>    Set a friendly label for the captured profile.
+`,
+
+  login: `${bold('agyp login')} — Add a new account profile
+
+${bold('USAGE')}
+  agyp login [--label <name>] [--force] [--default-browser] [-- <agy args>]
+
+${bold('DESCRIPTION')}
+  Clears agy's live credential, launches agy so you can sign in to a new account,
+  and captures the result as a new saved profile.
+
+  By default, sign-in opens in an isolated Chrome guest window to avoid interference
+  with your default browser profile.
+
+${bold('OPTIONS')}
+  --label <name>      Set a friendly label for the new profile.
+  --force             Proceed even if agy appears to be currently running.
+  --default-browser   Open sign-in in your default system browser instead of Chrome guest window.
+`,
+
+  list: `${bold('agyp list')} — List all saved profiles
+
+${bold('USAGE')}
+  agyp list [--json]
+  agyp ls [--json]
+
+${bold('DESCRIPTION')}
+  Displays all saved profiles in the vault, indicating which profile agy is currently using,
+  along with labels and last-used dates.
+
+${bold('OPTIONS')}
+  --json    Output machine-readable JSON format.
+`,
+
+  use: `${bold('agyp use')} — Switch agy's active account profile
+
+${bold('USAGE')}
+  agyp use <target> [--force]
+  agyp switch <target> [--force]
+
+${bold('DESCRIPTION')}
+  Swaps agy's live credential with the credential of the specified target profile.
+  Target can be an email, 1-based list index, label, or email prefix.
+
+${USE_VS_RUN}`,
+
+  run: `${bold('agyp run')} — Switch profile and launch agy CLI
+
+${bold('USAGE')}
+  agyp run [target] [--force] [--default-browser] [-- <agy args>]
+  agyp start [target] [--force] [--default-browser] [-- <agy args>]
+
+${bold('DESCRIPTION')}
+  Switches to the target profile (if specified) and launches agy right in your terminal.
+  Everything after '--' is passed directly to agy.
+
+${USE_VS_RUN}`,
+
+  usage: `${bold('agyp usage')} — View model quota and prompt credits
+
+${bold('USAGE')}
+  agyp usage [target] [--all] [--json]
+  agyp quota [target] [--all] [--json]
+
+${bold('DESCRIPTION')}
+  Fetches remaining model quota and prompt credits for saved profiles.
+  Defaults to querying all saved profiles.
+
+${bold('OPTIONS')}
+  --all     Query all saved profiles (default behavior).
+  --json    Output machine-readable JSON snapshot format.
+`,
+
+  update: `${bold('agyp update')} — Update agy CLI and check model lineup changes
+
+${bold('USAGE')}
+  agyp update [--check] [--force]
+
+${bold('DESCRIPTION')}
+  Updates the agy CLI binary and checks if available models or quota tiers have changed.
+
+${bold('OPTIONS')}
+  --check    Only check for model lineup changes without updating agy.
+  --force    Proceed even if agy is currently running.
+`,
+
+  status: `${bold('agyp status')} — Show active profile and sync status
+
+${bold('USAGE')}
+  agyp status [--json]
+
+${bold('DESCRIPTION')}
+  Displays the signed-in account in agy, access token expiration, vault index path,
+  and whether agy's live credential matches a saved profile.
+
+${bold('OPTIONS')}
+  --json    Output machine-readable JSON status format.
+`,
+
+  label: `${bold('agyp label')} — Set, rename, or clear a profile's label
+
+${bold('USAGE')}
+  agyp label <target> [new-label] [--clear]
+  agyp rename <target> <new-label>
+
+${bold('DESCRIPTION')}
+  Sets, updates, or removes the friendly label for a profile (e.g. \`agyp label 1 hello\` labels account #1 as "hello").
+  Target can be an email, 1-based list index, existing label, or email prefix.
+  Note: labels cannot be numbers only (e.g. "123" is forbidden because digits resolve to list numbers).
+
+${bold('OPTIONS')}
+  --clear    Remove the label from the specified profile.
+`,
+
+  remove: `${bold('agyp remove')} — Delete a profile and its stored credentials
+
+${bold('USAGE')}
+  agyp remove <target>
+  agyp rm <target>
+
+${bold('DESCRIPTION')}
+  Deletes a profile from the vault index and removes its credentials from the system keyring.
+`,
+
+  doctor: `${bold('agyp doctor')} — Check system health and backend diagnostics
+
+${bold('USAGE')}
+  agyp doctor
+
+${bold('DESCRIPTION')}
+  Verifies OS keyring backend accessibility, agy binary presence on PATH,
+  Node.js version requirements, vault index integrity, and process state.
+`,
+};

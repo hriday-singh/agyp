@@ -12,6 +12,25 @@ export const yellow = paint('33');
 export const red = paint('31');
 export const cyan = paint('36');
 
+/**
+ * Braille spinner while the network is in flight. Writes to stderr so `--json`
+ * piped out of stdout stays machine-readable, and no-ops when stderr is not a
+ * TTY (CI logs, redirects). Returns the stop function.
+ */
+export function spinner(text: string): () => void {
+  if (!process.stderr.isTTY || process.env['NO_COLOR']) return () => {};
+  const frames = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
+  let i = 0;
+  const draw = () => process.stderr.write(`\r${frames[i++ % frames.length]} ${text}`);
+  draw();
+  const timer = setInterval(draw, 80);
+  timer.unref?.(); // never hold the process open on its own
+  return () => {
+    clearInterval(timer);
+    process.stderr.write(`\r${' '.repeat(text.length + 2)}\r`);
+  };
+}
+
 export function humanDuration(ms: number): string {
   if (ms <= 0) return 'now';
   const minutes = Math.floor(ms / 60_000);

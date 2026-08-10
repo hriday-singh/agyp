@@ -4,7 +4,7 @@
       "PowerShell(Get-ChildItem \"c:\\\\Users\\\\clash\\\\OneDrive\\\\Desktop\\\\Codes\\\\Windows\\\\agy-profiler\" -Force | Select-Object Name; \"---\"; Get-ChildItem \"$env:APPDATA\\\\antigravity-usage\" -Recurse -Depth 2 -ErrorAction SilentlyContinue | Select-Object FullName, Length; \"---\"; Get-ChildItem \"$env:USERPROFILE\\\\.gemini\" -Depth 1 -ErrorAction SilentlyContinue | Select-Object FullName)",
       "PowerShell(\\(Get-Command agy -ErrorAction SilentlyContinue\\).Source; \"---\"; cmdkey /list | Select-String -Pattern \"gemini|antigravity\" -Context 0,2)",
       "PowerShell(Get-ChildItem \"$env:APPDATA\\\\antigravity-usage\" -Recurse -File -ErrorAction SilentlyContinue | ForEach-Object { $_.FullName + \"  [\" + $_.Length + \"]\" }; \"--- config ---\"; Get-Content \"$env:APPDATA\\\\antigravity-usage\\\\config.json\" -ErrorAction SilentlyContinue; \"--- gemini dir ---\"; Get-ChildItem \"$env:USERPROFILE\\\\.gemini\" -Force -ErrorAction SilentlyContinue | ForEach-Object { $_.FullName })",
-      "PowerShell(\"--- tokens keys ---\"; \\(Get-Content \"$env:APPDATA\\\\antigravity-usage\\\\accounts\\\\prayags@gmail.com\\\\tokens.json\" -Raw | ConvertFrom-Json\\).PSObject.Properties | ForEach-Object { $_.Name + \" : \" + \\($_.Value.ToString\\(\\).Substring\\(0,[Math]::Min\\(18,$_.Value.ToString\\(\\).Length\\)\\)\\) }; \"--- metadata ---\"; Get-Content \"$env:APPDATA\\\\antigravity-usage\\\\accounts\\\\prayags@gmail.com\\\\metadata.json\" -Raw; \"--- cache head ---\"; \\(Get-Content \"$env:APPDATA\\\\antigravity-usage\\\\accounts\\\\prayags@gmail.com\\\\cache.json\" -Raw\\).Substring\\(0,1500\\))",
+      "PowerShell(\"--- tokens keys ---\"; \\(Get-Content \"$env:APPDATA\\\\antigravity-usage\\\\accounts\\\\1234yags@gmail.com\\\\tokens.json\" -Raw | ConvertFrom-Json\\).PSObject.Properties | ForEach-Object { $_.Name + \" : \" + \\($_.Value.ToString\\(\\).Substring\\(0,[Math]::Min\\(18,$_.Value.ToString\\(\\).Length\\)\\)\\) }; \"--- metadata ---\"; Get-Content \"$env:APPDATA\\\\antigravity-usage\\\\accounts\\\\1234yags@gmail.com\\\\metadata.json\" -Raw; \"--- cache head ---\"; \\(Get-Content \"$env:APPDATA\\\\antigravity-usage\\\\accounts\\\\1234yags@gmail.com\\\\cache.json\" -Raw\\).Substring\\(0,1500\\))",
       "PowerShell(Get-ChildItem \"$env:USERPROFILE\\\\.gemini\\\\antigravity-cli\" -Recurse -File -ErrorAction SilentlyContinue | ForEach-Object { $_.FullName + \" [\" + $_.Length + \"]\" }; \"--- antigravity dir ---\"; Get-ChildItem \"$env:USERPROFILE\\\\.gemini\\\\antigravity\" -Recurse -File -Depth 1 -ErrorAction SilentlyContinue | ForEach-Object { $_.FullName + \" [\" + $_.Length + \"]\" })",
       "PowerShell(Get-ChildItem \"$env:USERPROFILE\\\\.gemini\\\\antigravity\" -File -ErrorAction SilentlyContinue | ForEach-Object { $_.Name + \" [\" + $_.Length + \"]\" }; \"--- backup ---\"; Get-ChildItem \"$env:USERPROFILE\\\\.gemini\\\\antigravity-backup\" -File -Recurse -Depth 1 -ErrorAction SilentlyContinue | ForEach-Object { $_.FullName + \" [\" + $_.Length + \"]\" })",
       "PowerShell(& agy --help 2>&1)",
@@ -53,7 +53,13 @@
       "Bash(sed -i 's/shell: true/shell: false/' shimtest.cjs)",
       "Bash(node shimtest.cjs)",
       "Bash(node dist/index.js --help)",
-      "Bash(node dist/index.js usage nonexistent)"
+      "Bash(node dist/index.js usage nonexistent)",
+      "Bash(sed -i 's/gemini-3-pro/gemini-3.1-pro/g' test/unit.test.ts)",
+      "Bash(npm test *)",
+      "PowerShell($d = & node -e \"const m=require\\('./dist/browser.js'\\);\" 2>$null; $env:X=1; node --input-type=module -e \"const b=await import\\('./dist/browser.js'\\); const e=b.guestBrowserEnv\\({PATH:'x'}\\); const dir=e.PATH.split\\(';'\\)[0]; console.log\\(dir\\); console.log\\(require\\('fs'\\).readFileSync\\(dir+'/rundll32.cmd','utf8'\\)\\)\" 2>&1 | Select-Object -First 12)",
+      "Bash(node --input-type=module -e ' *)",
+      "Bash(printf '@echo off\\\\r\\\\nsetlocal\\\\r\\\\nset \"u=%%*\"\\\\r\\\\nfor /f \"tokens=1,*\" %%%%a in \\(\"%%u%%\"\\) do set \"u=%%%%b\"\\\\r\\\\necho GOT[%%u%%]\\\\r\\\\n')",
+      "Bash(cmd //c rundll32.cmd url.dll,FileProtocolHandler \"https://accounts.google.com/o/oauth2/auth?client_id=abc&scope=x%20y&state=1\")"
     ]
   }
 }

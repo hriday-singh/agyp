@@ -12,11 +12,11 @@ import { fingerprint, resolve, upsert, type VaultIndex } from '../src/vault.js';
 
 describe('parseArgs', () => {
   it('splits command, positional, flags and passthrough', () => {
-    const parsed = parseArgs(['run', 'work', '--force', '--', '--model', 'gemini-3-pro']);
+    const parsed = parseArgs(['run', 'work', '--force', '--', '--model', 'gemini-3.1-pro']);
     expect(parsed.command).toBe('run');
     expect(parsed.positional).toEqual(['work']);
     expect(parsed.flags.has('force')).toBe(true);
-    expect(parsed.passthrough).toEqual(['--model', 'gemini-3-pro']);
+    expect(parsed.passthrough).toEqual(['--model', 'gemini-3.1-pro']);
   });
 
   it('reads --label as a value option, not a flag', () => {
@@ -163,6 +163,18 @@ describe('quota parsing', () => {
     expect(snapshot.models[0]!.resetTime).toBe('2026-08-10T18:00:00Z');
   });
 
+  it('reports the paid subscription, not the free-tier Code Assist licence', () => {
+    const snapshot = parseSnapshot(
+      {
+        currentTier: { id: 'free-tier', name: 'Antigravity' },
+        paidTier: { id: 'g1-pro-tier', name: 'Google AI Pro' },
+      },
+      { models: {} },
+      'a@b.com',
+    );
+    expect(snapshot.planType).toBe('Google AI Pro');
+  });
+
   it('falls back to the tier id when there is no plan info', () => {
     const snapshot = parseSnapshot({ currentTier: { id: 'free-tier' } }, { models: {} }, 'a@b.com');
     expect(snapshot.planType).toBe('free-tier');
@@ -235,5 +247,11 @@ describe('guest browser shim', () => {
     const script = readFileSync(join(dir, shim), 'utf8');
     expect(script).toContain('--guest');
     expect(env['PATH']!.endsWith('/existing')).toBe(true);
+    // cmd splits `url.dll,FileProtocolHandler` into two arguments, so a fixed
+    // %2 opens "FileProtocolHandler" instead of the OAuth URL.
+    if (process.platform === 'win32') {
+      expect(script).not.toContain('%~2');
+      expect(script).toContain('tokens=1,*');
+    }
   });
 });

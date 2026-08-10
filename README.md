@@ -12,7 +12,7 @@ $ agyp list
 ○  2. you.work@gmail.com            work      last used 2026-08-09
 
 $ agyp usage
-you@gmail.com (free-tier)
+you@gmail.com (Google AI Pro)
   Claude Opus 4.6 (Thinking)   ████████████████░░░░   79%  resets in 3h 51m
   Gemini 3.1 Pro (High)        ────────────────────    n/a  resets in 1d 11h
 ...

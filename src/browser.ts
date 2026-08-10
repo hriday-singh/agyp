@@ -57,9 +57,26 @@ export function guestBrowserEnv(env: NodeJS.ProcessEnv = process.env): NodeJS.Pr
 
   const dir = mkdtempSync(join(tmpdir(), 'agyp-browser-'));
   if (process.platform === 'win32') {
-    // pkg/browser calls: rundll32 url.dll,FileProtocolHandler <url>  -> %2 is the URL.
-    // OAuth URLs are full of `&`, so it has to stay quoted through cmd.
-    writeFileSync(join(dir, 'rundll32.cmd'), `@echo off\r\nstart "" "${chrome}" --guest "%~2"\r\n`);
+    // pkg/browser calls: rundll32 url.dll,FileProtocolHandler <url>.
+    // The URL is not at a fixed index: cmd splits unquoted arguments on commas
+    // as well as spaces, so `url.dll,FileProtocolHandler` arrives as one
+    // argument when the caller quoted it and as two when it did not — %2 is the
+    // URL in the first case and the string "FileProtocolHandler" in the second.
+    // So scan for the argument that looks like a URL instead. `set "a=%~1"`
+    // keeps the `&` of an OAuth URL inside quotes, where cmd will not read it
+    // as a command separator.
+    const cmd = [
+      '@echo off',
+      'setlocal',
+      ':next',
+      'if "%~1"=="" goto done',
+      'set "a=%~1"',
+      'if /i not "%a:~0,4%"=="http" shift & goto next',
+      `start "" "${chrome}" --guest "%a%"`,
+      ':done',
+      '',
+    ].join('\r\n');
+    writeFileSync(join(dir, 'rundll32.cmd'), cmd);
   } else {
     // ponytail: one shim per name pkg/browser tries; whichever it picks, it lands here.
     const script = `#!/bin/sh\nexec "${chrome}" --guest "$1" >/dev/null 2>&1 &\n`;

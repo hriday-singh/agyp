@@ -13,7 +13,7 @@ import { guestBrowserEnv } from './browser.js';
 import { describeDiff, trackCatalog } from './catalog.js';
 import { fetchEmail, fetchQuota, refreshAccessToken, type Snapshot } from './google.js';
 import * as keyring from './keyring.js';
-import { bold, cyan, dim, green, red, renderSnapshot, yellow } from './render.js';
+import { bold, cyan, dim, green, red, renderSnapshot, spinner, yellow } from './render.js';
 import {
   PENDING_ACCOUNT,
   VAULT_SERVICE,
@@ -81,7 +81,7 @@ ${bold('EXAMPLES')}
   agyp login --label work          # add a second account, in a guest Chrome window
   agyp usage                       # quota across every account
   agyp usage work                  # quota for one account
-  agyp run work -- --model gemini-3-pro
+  agyp run work -- --model gemini-3.1-pro
 `;
 
 const now = () => new Date().toISOString();
@@ -340,7 +340,8 @@ async function cmdUsage(target: string | undefined, json: boolean): Promise<void
   const all = !target;
   const targets = all ? index.profiles : [resolve(index, target)];
 
-  const results = await Promise.allSettled(targets.map(snapshotFor));
+  const stop = spinner(targets.length > 1 ? `checking ${targets.length} accounts` : `checking ${targets[0]!.email}`);
+  const results = await Promise.allSettled(targets.map(snapshotFor)).finally(stop);
   const snapshots: Snapshot[] = [];
 
   results.forEach((result, i) => {
@@ -392,7 +393,8 @@ async function cmdUpdate(checkOnly: boolean, force: boolean): Promise<void> {
     );
   }
 
-  const { snapshot } = await snapshotFor(profile);
+  const stop = spinner('checking model lineup');
+  const { snapshot } = await snapshotFor(profile).finally(stop);
   const changed = trackCatalog(snapshot);
   if (!changed) {
     console.log(dim(`models: no changes for ${profile.email} (${snapshot.models.length} available)`));
@@ -427,8 +429,9 @@ async function cmdStatus(json: boolean): Promise<void> {
       /* reported below as unparseable */
     }
     if (!active) {
+      const stop = spinner('identifying the signed-in account');
       try {
-        unknownEmail = (await identify(raw)).email;
+        unknownEmail = (await identify(raw).finally(stop)).email;
       } catch {
         /* offline; leave undefined */
       }

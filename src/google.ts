@@ -163,7 +163,12 @@ export function parseSnapshot(
   const models = [...grouped.values()].sort((a, b) => a.label.localeCompare(b.label));
 
   const planInfo = loadResponse['planInfo'] as { planType?: string; monthlyPromptCredits?: number } | undefined;
-  const currentTier = loadResponse['currentTier'] as { id?: string } | undefined;
+  // The subscription lives in `paidTier` ({id: "g1-pro-tier", name: "Google AI
+  // Pro"}). `currentTier` is the Code Assist licensing tier and reads
+  // {id: "free-tier", name: "Antigravity"} even on a paid account — showing that
+  // labels every Pro user as free, so paidTier wins.
+  const paidTier = loadResponse['paidTier'] as { id?: string; name?: string } | undefined;
+  const currentTier = loadResponse['currentTier'] as { id?: string; name?: string } | undefined;
   const available = loadResponse['availablePromptCredits'] as number | undefined;
   const monthly = planInfo?.monthlyPromptCredits;
   const promptCredits =
@@ -171,7 +176,12 @@ export function parseSnapshot(
       ? { available, monthly, remainingPercentage: monthly > 0 ? available / monthly : 0 }
       : undefined;
 
-  return { email, planType: planInfo?.planType ?? currentTier?.id, promptCredits, models };
+  return {
+    email,
+    planType: paidTier?.name ?? planInfo?.planType ?? currentTier?.name ?? currentTier?.id,
+    promptCredits,
+    models,
+  };
 }
 
 function earliest(a: string | undefined, b: string | undefined): string | undefined {

@@ -56,6 +56,7 @@ src/
   keyring.ts   the one place that knows about Credential Manager / libsecret / Keychain
   google.ts    OAuth refresh + Cloud Code quota API
   catalog.ts   remembers the model lineup so changes can be reported
+  browser.ts   sends agy's OAuth page to a Chrome guest window
   render.ts    terminal output
   args.ts      argument parsing
 ```
@@ -138,6 +139,42 @@ If anything goes wrong in between, `recoverPending()` — called at the start of
 every command — puts the old credential back. That is why the backup lives in
 the keyring rather than in memory: a killed terminal must not lose an account.
 
+## Browser isolation during sign-in
+
+Step 3 above opens a Google sign-in page, and by default it would open in your
+normal browser — where you are probably already signed in as someone. That is the
+wrong session in both directions: the OAuth page silently picks the account
+already logged in, and the account you add stays logged in there afterwards.
+
+`agy` opens URLs the way every Go CLI does (`github.com/pkg/browser`): it shells
+out to `rundll32 url.dll,FileProtocolHandler <url>` on Windows and `xdg-open` /
+`open` elsewhere, each resolved through `PATH`. That means we do not need `agy`'s
+cooperation and do not have to patch anything:
+
+1. `guestBrowserEnv()` writes a temp directory containing a shim named after
+   whichever of those the platform uses (`rundll32.cmd`, or executable `xdg-open`
+   / `open` / `x-www-browser` / `www-browser` scripts).
+2. The shim runs `chrome --guest <url>`.
+3. That directory is prepended to `PATH` for the child `agy` only.
+
+Guest mode, not a second Chrome profile: a guest window shares no cookies with
+your profiles and keeps none when it closes. `--default-browser` skips the shim
+entirely, and so does a machine with no Chrome installed (with a warning) —
+sign-in still works, it just is not isolated.
+
+On Linux the browser is found with `which`, in order: `google-chrome`,
+`google-chrome-stable`, `chromium`, `chromium-browser`. Chromium is fine —
+`--guest` is a Chromium flag, not a Google-build extra — and snap/apt/dnf
+installs all put a wrapper on `PATH`. A Flatpak-only install does not, so that
+case falls back to the default browser.
+
+Two known edges. Chrome is located by well-known path (Windows/macOS) or `which`
+(Linux), so an unusual install falls back to the default browser. And the Windows
+shim is a batch file, which means the URL passes through `cmd` quoting; Go's
+post-CVE-2024-24576 batch escaping quotes the `&` in an OAuth URL correctly, but
+an `agy` built with a pre-2024 Go toolchain would truncate it — `--default-browser`
+is the escape hatch if a sign-in page ever loads half a URL.
+
 ## Why switching is blocked while `agy` runs
 
 A running `agy` holds its token in memory and rewrites the keyring entry on
@@ -158,8 +195,11 @@ Endpoints (Antigravity's own, discovered from the shipped CLI):
 - `POST https://cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels` —
   per-model `quotaInfo`.
 
-Because this only needs a refresh token, `agyp usage --all` reads every account
-in parallel without touching the live credential.
+Because this only needs a refresh token, `agyp usage` reads every account in
+parallel without touching the live credential — which is why "all profiles" is the
+default and a target is the narrowing case, not the other way round. Failures are
+per-account (`Promise.allSettled`): one expired refresh token prints its error on
+that account's line and the rest still render.
 
 Two response quirks, both handled in `parseSnapshot`:
 

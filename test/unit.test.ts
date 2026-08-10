@@ -1,5 +1,8 @@
+import { readFileSync } from 'node:fs';
+import { delimiter, join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { isAgyBlob, parseBlob } from '../src/agy.js';
+import { chromePath, guestBrowserEnv } from '../src/browser.js';
 import { UserError, parseArgs } from '../src/args.js';
 import { catalogFromSnapshot, describeDiff, diffCatalog, isEmptyDiff } from '../src/catalog.js';
 import { parseSnapshot, shouldShowModel } from '../src/google.js';
@@ -220,5 +223,17 @@ describe('model catalog', () => {
 describe('keyring target naming', () => {
   it('matches the scheme agy uses, so we read its real entry', () => {
     expect(winTarget('gemini', 'antigravity')).toBe('gemini:antigravity');
+  });
+});
+
+describe('guest browser shim', () => {
+  it('puts a shim dir first on PATH and points it at Chrome in guest mode', () => {
+    if (!chromePath()) return; // no Chrome on this machine: agyp falls back to the default browser
+    const env = guestBrowserEnv({ PATH: '/existing' })!;
+    const dir = env['PATH']!.split(delimiter)[0]!;
+    const shim = process.platform === 'win32' ? 'rundll32.cmd' : 'xdg-open';
+    const script = readFileSync(join(dir, shim), 'utf8');
+    expect(script).toContain('--guest');
+    expect(env['PATH']!.endsWith('/existing')).toBe(true);
   });
 });

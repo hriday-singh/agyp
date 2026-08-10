@@ -11,7 +11,7 @@ $ agyp list
 ●  1. you@gmail.com                 personal  last used 2026-08-10
 ○  2. you.work@gmail.com            work      last used 2026-08-09
 
-$ agyp usage --all
+$ agyp usage
 you@gmail.com (free-tier)
   Claude Opus 4.6 (Thinking)   ████████████████░░░░   79%  resets in 3h 51m
   Gemini 3.1 Pro (High)        ────────────────────    n/a  resets in 1d 11h
@@ -45,22 +45,36 @@ agyp login --label work       # add a second one (signs you in through agy)
 agyp list                     # see them, and which one is live
 agyp use work                 # switch
 agyp run personal             # switch and launch agy in one go
-agyp usage --all              # quota for every account
+agyp usage                    # quota for every account (default)
+agyp usage work               # quota for one of them
 ```
 
 `adopt` first — it captures your existing session, so you never have to re-login
 for accounts you already use.
+
+### `use` vs `run`
+
+`agyp help use` prints this at any time.
+
+- **`use <target>`** swaps the credential and exits. `agy` is not started; the next
+  time you start it yourself — any terminal, or the Antigravity editor — it comes
+  up as that account and stays there until you switch again.
+- **`run [target] [-- args]`** swaps (only if you name a target) and then launches
+  `agy` right there, attached to your terminal. Everything after `--` goes to `agy`
+  untouched, and any token it refreshes is written back on exit.
+
+Rule of thumb: `use` to change the default account, `run` to start a session now.
 
 ## Commands
 
 | Command | What it does |
 | --- | --- |
 | `agyp adopt [--label <name>]` | Save whatever account `agy` is signed into right now as a profile |
-| `agyp login [--label <name>]` | Add an account: clears `agy`'s credential, runs `agy` so you can sign in, captures the result |
+| `agyp login [--label <name>]` | Add an account: clears `agy`'s credential, runs `agy` so you can sign in (in a Chrome guest window), captures the result |
 | `agyp list` | Profiles, with a `●` on the one `agy` is using |
 | `agyp use <target>` | Make a profile the active account |
 | `agyp run [target] [-- args]` | Switch (if a target is given) and launch `agy`; anything after `--` is passed to `agy` |
-| `agyp usage [target] [--all]` | Model quota and reset timers |
+| `agyp usage [target]` | Model quota and reset timers. No target = every profile |
 | `agyp update [--check]` | Update the `agy` CLI, then report which models were added, renamed or removed. `--check` reports without updating |
 | `agyp status` | What `agy` is authenticated as, and whether it matches a saved profile |
 | `agyp remove <target>` | Forget a profile and delete its tokens from the keyring |
@@ -69,9 +83,22 @@ for accounts you already use.
 A **target** is an email, a list number, a label, or an unambiguous email prefix —
 `agyp use 2`, `agyp use work`, and `agyp use you.work@gmail.com` are the same thing.
 
-`--json` works on `list`, `usage`, and `status`.
+`--json` works on `list`, `usage`, and `status`. `--all` on `usage` still works; it
+is now the default.
 
 ## Things worth knowing
+
+**Sign-in happens in a Chrome guest window.** `agy`'s login is an ordinary Google
+web session, so in your normal browser it would pick up whichever account is
+already signed in there — and leave the new one signed in afterwards. `agyp login`
+(and `agyp run`, if `agy` asks you to re-authenticate) sends that page to a Chrome
+guest window instead: no shared cookies in either direction, nothing left behind
+when you close it. Chromium counts (`chromium` / `chromium-browser` on Linux —
+`--guest` is a Chromium flag). Pass `--default-browser` to opt out, which is also
+what happens automatically when no Chrome/Chromium is found.
+
+**Quota with no target means every account.** `agyp usage` shows all profiles;
+name one (`agyp usage work`) to narrow it.
 
 **Re-authentication is contained.** If `agy` makes you sign in again, that only
 touches the profile you are on. Before every switch, `agyp` writes the live
@@ -84,7 +111,7 @@ profile.
 whenever the token refreshes, which would overwrite whatever you just switched to.
 Close it, or pass `--force` if you know what you are doing.
 
-**Quota needs no switching.** `agyp usage --all` talks to Google directly with each
+**Quota needs no switching.** `agyp usage` talks to Google directly with each
 profile's own token. Nothing about your live session changes.
 
 **`n/a` in the quota column is honest.** Google omits the remaining-fraction field

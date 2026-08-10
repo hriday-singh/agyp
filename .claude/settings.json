@@ -40,7 +40,20 @@
       "Bash(node -e ' *)",
       "Bash(node dist/index.js update --check)",
       "Bash(npx vitest *)",
-      "Bash(node dist/index.js help)"
+      "Bash(node dist/index.js help)",
+      "Bash(cd /c/Users/clash/AppData/Local/agy/bin && strings -n 6 agy 2>/dev/null | grep -iE \"rundll32|xdg-open|FileProtocolHandler|BROWSER|--no-browser|open-browser\" | sort -u | head -40)",
+      "Read(//c/Users/clash/AppData/Local/agy/bin/**)",
+      "Bash(grep -aoE 'rundll32|url\\\\.dll,FileProtocolHandler|xdg-open|\\\\$BROWSER|BROWSER|no-browser|nobrowser|chrome' agy)",
+      "Bash(grep -aoE \".{60}url\\\\.dll,FileProtocolHandler.{80}\" agy)",
+      "Bash(npx tsc *)",
+      "Bash(node dist/index.js help use)",
+      "Bash(node dist/index.js usage)",
+      "Bash(powershell -NoProfile -Command 'Get-CimInstance Win32_Process -Filter \"Name='\\\\''chrome.exe'\\\\''\" | Where-Object { $_.CommandLine -like '\\\\''*--guest*'\\\\'' } | Select-Object -First 1 -ExpandProperty CommandLine')",
+      "Bash(node \"C:/Users/clash/AppData/Local/Temp/claude/c--Users-clash-OneDrive-Desktop-Codes-Windows-agy-profiler/60ee7b85-83d9-4839-9e79-f6532900a29d/scratchpad/shimtest.cjs\")",
+      "Bash(sed -i 's/shell: true/shell: false/' shimtest.cjs)",
+      "Bash(node shimtest.cjs)",
+      "Bash(node dist/index.js --help)",
+      "Bash(node dist/index.js usage nonexistent)"
     ]
   }
 }

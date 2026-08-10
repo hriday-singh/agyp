@@ -101,8 +101,8 @@ export function agyVersion(): string | null {
 }
 
 /** Run `agy` attached to this terminal. Returns its exit code. */
-export function launchAgy(args: string[]): number {
-  const r = spawnSync('agy', args, { stdio: 'inherit', shell: process.platform === 'win32' });
+export function launchAgy(args: string[], env?: NodeJS.ProcessEnv): number {
+  const r = spawnSync('agy', args, { stdio: 'inherit', shell: process.platform === 'win32', env });
   if (r.error) throw new Error(`could not launch agy: ${r.error.message}`);
   return r.status ?? 0;
 }

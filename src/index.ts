@@ -9,6 +9,7 @@
  */
 import * as agy from './agy.js';
 import { UserError, parseArgs } from './args.js';
+import { guestBrowserEnv } from './browser.js';
 import { describeDiff, trackCatalog } from './catalog.js';
 import { fetchEmail, fetchQuota, refreshAccessToken, type Snapshot } from './google.js';
 import * as keyring from './keyring.js';
@@ -29,6 +30,21 @@ import {
   type VaultIndex,
 } from './vault.js';
 
+const USE_VS_RUN = `${bold('USE vs RUN')}
+  ${bold('use')} only swaps the credential and exits. agy is not started; the next time you
+  start agy yourself — from any terminal, or from the Antigravity editor — it comes
+  up as that account, and stays there until you switch again. It refuses to run
+  while agy is open, because a running agy rewrites the credential on token
+  refresh and would undo the swap.
+
+  ${bold('run')} swaps (only if you name a target) and then launches agy right there,
+  attached to your terminal. Everything after ${bold('--')} is handed to agy untouched.
+  When agy exits, any token it refreshed is written back to that profile. With no
+  target it launches agy as whoever is already active.
+
+  Rule of thumb: ${bold('use')} to change the default account, ${bold('run')} to start a session now.
+`;
+
 const HELP = `${bold('agyp')} — profile manager for the Antigravity CLI
 
 ${bold('USAGE')}
@@ -43,24 +59,28 @@ ${bold('COMMANDS')}
   list                       List profiles and show which one agy is using
   use <target>               Make a profile agy's active account
   run [target] [-- args]     Switch to a profile (if given) and launch agy
-  usage [target] [--all]     Show model quota. Default: active profile
+  usage [target]             Show model quota. Default: every saved profile
   update [--check]           Update the agy CLI, then report which models changed
   status                     What agy is authenticated as, and whether it is in sync
   remove <target>            Forget a profile (its tokens are deleted from the keyring)
   doctor                     Check keyring backend, agy binary, vault state
 
+${USE_VS_RUN}
 ${bold('OPTIONS')}
-  --all        usage: every saved profile
-  --check      update: only report model changes, do not update agy
-  --json       usage/list/status: machine-readable output
-  --label      adopt/login: a short name you can use as a target
-  --force      use/run/login: proceed even if agy appears to be running
-  -h, --help   This text
+  --all               usage: every saved profile (the default; kept for habit)
+  --check             update: only report model changes, do not update agy
+  --json              usage/list/status: machine-readable output
+  --label             adopt/login: a short name you can use as a target
+  --force             use/run/login: proceed even if agy appears to be running
+  --default-browser   login/run: sign in in your normal browser instead of a
+                      Chrome guest window
+  -h, --help          This text, or \`agyp help use\` for use vs run
 
 ${bold('EXAMPLES')}
   agyp adopt --label personal      # save the account you are already signed into
-  agyp login --label work          # add a second account
-  agyp usage --all                 # quota across every account
+  agyp login --label work          # add a second account, in a guest Chrome window
+  agyp usage                       # quota across every account
+  agyp usage work                  # quota for one account
   agyp run work -- --model gemini-3-pro
 `;
 
@@ -186,7 +206,28 @@ async function cmdAdopt(label: string | undefined): Promise<void> {
   console.log(`${green('saved')} ${bold(email)}${label ? dim(` (${label})`) : ''}`);
 }
 
-async function cmdLogin(label: string | undefined, force: boolean, agyArgs: string[]): Promise<void> {
+/**
+ * Sign-in browser. Guest Chrome by default so the OAuth page neither picks up
+ * nor leaves behind a session in your normal browser; `--default-browser` opts
+ * back out, and we fall back to it silently-ish if Chrome is not installed.
+ */
+function browserEnv(useDefault: boolean): NodeJS.ProcessEnv | undefined {
+  if (useDefault) return undefined;
+  const env = guestBrowserEnv();
+  if (!env) {
+    warn('Chrome not found — sign-in will open in your default browser');
+    return undefined;
+  }
+  info('Sign-in opens in a Chrome guest window (isolated from your normal profile).');
+  return env;
+}
+
+async function cmdLogin(
+  label: string | undefined,
+  force: boolean,
+  defaultBrowser: boolean,
+  agyArgs: string[],
+): Promise<void> {
   requireIdle(force);
   let index = await syncBack(loadIndex());
 
@@ -198,7 +239,7 @@ async function cmdLogin(label: string | undefined, force: boolean, agyArgs: stri
 
   info('Starting agy with no credential. Sign in, then exit agy to finish adding the profile.');
   try {
-    agy.launchAgy(agyArgs);
+    agy.launchAgy(agyArgs, browserEnv(defaultBrowser));
   } catch (err) {
     if (previous) agy.writeLive(previous);
     delSecret(PENDING_ACCOUNT);
@@ -260,7 +301,12 @@ async function cmdUse(target: string, force: boolean): Promise<void> {
   console.log(`${green('active')} ${bold(profile.email)}`);
 }
 
-async function cmdRun(target: string | undefined, force: boolean, agyArgs: string[]): Promise<never> {
+async function cmdRun(
+  target: string | undefined,
+  force: boolean,
+  defaultBrowser: boolean,
+  agyArgs: string[],
+): Promise<never> {
   let index = await syncBack(loadIndex());
   if (target) {
     requireIdle(force);
@@ -270,7 +316,9 @@ async function cmdRun(target: string | undefined, force: boolean, agyArgs: strin
     info(`running as ${profile.email}`);
   }
 
-  const code = agy.launchAgy(agyArgs);
+  // If agy decides it needs a fresh sign-in mid-session, that page gets the same
+  // guest window as `login` — same reason.
+  const code = agy.launchAgy(agyArgs, defaultBrowser ? undefined : (guestBrowserEnv() ?? undefined));
   // agy refreshes (or replaces) its token while running; capture that before exit.
   saveIndex(await syncBack(loadIndex()));
   process.exit(code);
@@ -283,13 +331,14 @@ async function snapshotFor(profile: ProfileMeta): Promise<{ snapshot: Snapshot; 
   return fetchQuota(blob.token.refresh_token, profile.email, profile.projectId);
 }
 
-async function cmdUsage(target: string | undefined, all: boolean, json: boolean): Promise<void> {
+async function cmdUsage(target: string | undefined, json: boolean): Promise<void> {
   let index = loadIndex();
   if (index.profiles.length === 0) throw new UserError('no profiles yet — run `agyp adopt` or `agyp login`');
 
-  const targets = all
-    ? index.profiles
-    : [target ? resolve(index, target) : pickDefault(index)];
+  // No target means every profile: the usual question is "how much is left across
+  // my accounts", not "how much is left on the one agy happens to hold".
+  const all = !target;
+  const targets = all ? index.profiles : [resolve(index, target)];
 
   const results = await Promise.allSettled(targets.map(snapshotFor));
   const snapshots: Snapshot[] = [];
@@ -458,10 +507,12 @@ function cmdDoctor(): void {
 async function main(): Promise<void> {
   const { command, positional, flags, options, passthrough } = parseArgs(process.argv.slice(2));
   if (flags.has('help') || command === 'help') {
-    console.log(HELP);
+    const topic = command === 'help' ? positional[0] : command;
+    console.log(topic && ['use', 'run', 'switch', 'start'].includes(topic) ? USE_VS_RUN : HELP);
     return;
   }
 
+  const defaultBrowser = flags.has('default-browser');
   const force = flags.has('force');
   const json = flags.has('json');
   const label = options.get('label');
@@ -473,7 +524,7 @@ async function main(): Promise<void> {
     case 'adopt':
       return cmdAdopt(label);
     case 'login':
-      return cmdLogin(label, force, passthrough);
+      return cmdLogin(label, force, defaultBrowser, passthrough);
     case 'list':
     case 'ls':
       return cmdList(json);
@@ -483,11 +534,11 @@ async function main(): Promise<void> {
       return cmdUse(target, force);
     case 'run':
     case 'start':
-      await cmdRun(target, force, passthrough);
+      await cmdRun(target, force, defaultBrowser, passthrough);
       return;
     case 'usage':
     case 'quota':
-      return cmdUsage(target, flags.has('all'), json);
+      return cmdUsage(flags.has('all') ? undefined : target, json);
     case 'update':
       return cmdUpdate(flags.has('check'), force);
     case 'status':

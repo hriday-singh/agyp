@@ -83,6 +83,7 @@ Rule of thumb: `use` to change the default account, `run` to start a session now
 | `agyp label <target> [name]` | Set, update (e.g. `agyp label 1 hello`, alias: `rename`, `tag`), or remove (`--clear`) a profile's label |
 | `agyp remove <target>` | Forget a profile and delete its tokens from the keyring (aliases: `rm`, `delete`, `del`) |
 | `agyp doctor` | Keyring backend, `agy` binary, vault health (aliases: `check`, `health`) |
+| `agyp spinner [seconds]` | Interactive spinner demo with random status messages switching every 3s (aliases: `spin`, `loading`) |
 
 A **target** is an email, a list number, a label, or an unambiguous email prefix —
 `agyp use 2`, `agyp use work`, and `agyp use you.work@gmail.com` are the same thing.

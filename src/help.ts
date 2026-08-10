@@ -35,6 +35,7 @@ ${bold('COMMANDS')}
   remove <target>            Delete a profile (aliases: rm, delete, del, unlink)
   doctor                     Check system health and diagnostics (aliases: check, health)
   stats                      Usage & subscription plan statistics across profiles (aliases: plan, statistics, metrics)
+  spinner [seconds]          Show interactive loading spinner demo (aliases: spin, loading)
 
 ${USE_VS_RUN}
 ${bold('OPTIONS')}
@@ -56,7 +57,8 @@ ${bold('EXAMPLES')}
   agyp label personal --clear      # remove label from personal profile
   agyp usage                       # quota across every account
   agyp usage work                  # quota for one account
-  agyp run work -- --model gemini-3.1-pro
+  agyp run work                    # launch agy using work profile
+  agyp spinner 6                   # run spinner for 6 seconds
 `;
 
 export const COMMAND_HELP: Record<string, string> = {
@@ -219,5 +221,16 @@ ${bold('DESCRIPTION')}
 ${bold('OPTIONS')}
   --json     Output machine-readable JSON stats format.
   --reset    Clear cached usage statistics.
+`,
+
+  spinner: `${bold('agyp spinner')} — Show interactive loading spinner demo
+
+${bold('USAGE')}
+  agyp spinner [seconds]
+  agyp spin [seconds]
+
+${bold('DESCRIPTION')}
+  Runs an interactive terminal spinner for the specified duration (default: 10s),
+  switching between random status messages every 3 seconds.
 `,
 };

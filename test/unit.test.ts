@@ -9,18 +9,19 @@ import { parseSnapshot, shouldShowModel } from '../src/google.js';
 import { COMMAND_HELP, HELP } from '../src/help.js';
 import { validateLabel } from '../src/index.js';
 import { winTarget } from '../src/keyring.js';
-import { bar, humanDuration } from '../src/render.js';
+import { bar, humanDuration, spinner } from '../src/render.js';
+import { cmdSpinner, getRandomSpinnerText, SPINNER_TEXTS } from '../src/spinner.js';
 import { calculatePlanStats, clearUsageCache, loadUsageCache, recordUsageSnapshot } from '../src/stats.js';
 import { COMMAND_ALIASES, findBestMatch, levenshtein } from '../src/suggest.js';
 import { fingerprint, resolve, upsert, type VaultIndex } from '../src/vault.js';
 
 describe('parseArgs', () => {
   it('splits command, positional, flags and passthrough', () => {
-    const parsed = parseArgs(['run', 'work', '--force', '--', '--model', 'gemini-3.1-pro']);
+    const parsed = parseArgs(['run', 'work', '--force', '--', '--verbose', 'debug']);
     expect(parsed.command).toBe('run');
     expect(parsed.positional).toEqual(['work']);
     expect(parsed.flags.has('force')).toBe(true);
-    expect(parsed.passthrough).toEqual(['--model', 'gemini-3.1-pro']);
+    expect(parsed.passthrough).toEqual(['--verbose', 'debug']);
   });
 
   it('reads --label as a value option, not a flag', () => {
@@ -377,3 +378,56 @@ describe('usage & plan statistics', () => {
     expect(Object.keys(cleared.snapshots)).toHaveLength(0);
   });
 });
+
+describe('spinner command and controller', () => {
+  it('includes standard status messages in SPINNER_TEXTS', () => {
+    expect(SPINNER_TEXTS).toContain('identifying account');
+    expect(SPINNER_TEXTS).toContain('syncing current credential');
+    expect(SPINNER_TEXTS).toContain('identifying new account');
+    expect(SPINNER_TEXTS).toContain('loading profiles');
+    expect(SPINNER_TEXTS).toContain('syncing credential');
+    expect(SPINNER_TEXTS).toContain('syncing profile updates');
+    expect(SPINNER_TEXTS).toContain('checking model lineup');
+    expect(SPINNER_TEXTS).toContain('running health checks');
+    expect(SPINNER_TEXTS.length).toBeGreaterThanOrEqual(8);
+  });
+
+  it('getRandomSpinnerText selects a valid text and excludes current if possible', () => {
+    const text = getRandomSpinnerText();
+    expect(SPINNER_TEXTS).toContain(text);
+
+    const nextText = getRandomSpinnerText('identifying account');
+    expect(SPINNER_TEXTS).toContain(nextText);
+    expect(nextText).not.toBe('identifying account');
+  });
+
+  it('spinner creates controller with update method and stops cleanly', () => {
+    const stop = spinner('initial test');
+    expect(typeof stop).toBe('function');
+    expect(typeof stop.update).toBe('function');
+    expect(() => stop.update('updated test')).not.toThrow();
+    expect(() => stop()).not.toThrow();
+  });
+
+  it('cmdSpinner validates input duration', async () => {
+    await expect(cmdSpinner('-5')).rejects.toThrow(UserError);
+    await expect(cmdSpinner('0')).rejects.toThrow(UserError);
+    await expect(cmdSpinner('abc')).rejects.toThrow(UserError);
+  });
+
+  it('cmdSpinner executes with short duration', async () => {
+    await expect(cmdSpinner('0.05')).resolves.toBeUndefined();
+  });
+
+  it('maps spin and loading aliases to spinner', () => {
+    expect(COMMAND_ALIASES['spin']).toBe('spinner');
+    expect(COMMAND_ALIASES['loading']).toBe('spinner');
+  });
+
+  it('documents spinner in help', () => {
+    expect(HELP).toContain('spinner [seconds]');
+    expect(COMMAND_HELP['spinner']).toBeDefined();
+    expect(COMMAND_HELP['spinner']).toContain('agyp spinner');
+  });
+});
+

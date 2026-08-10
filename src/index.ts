@@ -15,6 +15,7 @@ import { fetchEmail, fetchQuota, refreshAccessToken, type Snapshot } from './goo
 import { COMMAND_HELP, HELP } from './help.js';
 import * as keyring from './keyring.js';
 import { bold, cyan, dim, green, red, renderSnapshot, spinner, yellow } from './render.js';
+import { cmdSpinner } from './spinner.js';
 import { cmdStats, recordUsageSnapshot } from './stats.js';
 import { ALL_COMMAND_NAMES, COMMAND_ALIASES, findBestMatch, formatSuggestion } from './suggest.js';
 import {
@@ -609,6 +610,8 @@ async function main(): Promise<void> {
       return cmdDoctor();
     case 'stats':
       return cmdStats(json, flags.has('reset'));
+    case 'spinner':
+      return cmdSpinner(target);
     default: {
       const bestMatch = findBestMatch(command, ALL_COMMAND_NAMES);
       const suggestion = formatSuggestion(command, bestMatch);

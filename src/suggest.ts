@@ -59,6 +59,9 @@ export const COMMAND_ALIASES: Record<string, string> = {
   metrics: 'stats',
   plan: 'stats',
   plans: 'stats',
+
+  spin: 'spinner',
+  loading: 'spinner',
 };
 
 export const ALL_COMMAND_NAMES: string[] = [
@@ -74,6 +77,7 @@ export const ALL_COMMAND_NAMES: string[] = [
   'remove', 'rm', 'delete', 'del', 'unlink', 'purge',
   'doctor', 'check', 'health', 'diag', 'diagnose',
   'stats', 'statistics', 'metrics', 'plan', 'plans',
+  'spinner', 'spin', 'loading',
   'help',
 ];
 

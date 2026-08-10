@@ -12,25 +12,50 @@ export const yellow = paint('33');
 export const red = paint('31');
 export const cyan = paint('36');
 
+export interface SpinnerController {
+  (): void;
+  update: (newText: string) => void;
+}
+
 /**
  * Braille spinner while the network is in flight. Writes to stderr so `--json`
  * piped out of stdout stays machine-readable, and no-ops when stderr is not a
- * TTY (CI logs, redirects). Returns the stop function.
+ * TTY (CI logs, redirects). Returns the stop function with an update method.
  */
-export function spinner(text: string): () => void {
+export function spinner(text: string): SpinnerController {
   const isTTY = Boolean((process.stderr.isTTY || process.stdout.isTTY) && !process.env['NO_COLOR']);
-  if (!isTTY) return () => {};
+  if (!isTTY) {
+    const noop = (() => {}) as SpinnerController;
+    noop.update = () => {};
+    return noop;
+  }
   const stream = process.stderr.isTTY ? process.stderr : process.stdout;
   const frames = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
   let i = 0;
-  const draw = () => stream.write(`\r${frames[i++ % frames.length]} ${text}`);
+  let currentText = text;
+  let maxLen = text.length;
+
+  const draw = () => {
+    const line = `${frames[i++ % frames.length]} ${currentText}`;
+    if (line.length > maxLen) maxLen = line.length;
+    stream.write(`\r${line.padEnd(maxLen + 2, ' ')}`);
+  };
+
   draw();
   const timer = setInterval(draw, 80);
   timer.unref?.(); // never hold the process open on its own
-  return () => {
+
+  const stop = (() => {
     clearInterval(timer);
-    stream.write(`\r${' '.repeat(text.length + 10)}\r`);
+    stream.write(`\r${' '.repeat(maxLen + 10)}\r`);
+  }) as SpinnerController;
+
+  stop.update = (newText: string) => {
+    currentText = newText;
+    if (newText.length + 2 > maxLen) maxLen = newText.length + 2;
   };
+
+  return stop;
 }
 
 export function humanDuration(ms: number): string {

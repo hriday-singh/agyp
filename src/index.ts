@@ -394,9 +394,11 @@ async function cmdUpdate(checkOnly: boolean, force: boolean): Promise<void> {
       throw new UserError('agy is running — close it before updating, or pass --force');
     }
     const before = agy.agyVersion();
-    console.log(`agy ${before ?? 'unknown'} — running \`agy update\``);
-    const code = agy.launchAgy(['update']);
-    if (code !== 0) throw new UserError(`agy update exited ${code}`);
+    const stopUpdate = spinner(`updating agy ${before ?? ''}`.trimEnd());
+    const { code, output } = await agy
+      .runAgyQuiet(['update'], (line) => stopUpdate.log(dim(line)))
+      .finally(stopUpdate);
+    if (code !== 0) throw new UserError(`agy update exited ${code}\n${output.trim()}`);
     const after = agy.agyVersion();
     console.log(
       after && before && after !== before

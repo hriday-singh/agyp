@@ -15,6 +15,8 @@ export const cyan = paint('36');
 export interface SpinnerController {
   (): void;
   update: (newText: string) => void;
+  /** Print a line above the spinner without smearing it. */
+  log: (line: string) => void;
 }
 
 /**
@@ -27,6 +29,7 @@ export function spinner(text: string): SpinnerController {
   if (!isTTY) {
     const noop = (() => {}) as SpinnerController;
     noop.update = () => {};
+    noop.log = (line: string) => console.log(line);
     return noop;
   }
   const stream = process.stderr.isTTY ? process.stderr : process.stdout;
@@ -45,10 +48,18 @@ export function spinner(text: string): SpinnerController {
   const timer = setInterval(draw, 80);
   timer.unref?.(); // never hold the process open on its own
 
+  const clear = () => stream.write(`\r${' '.repeat(maxLen + 10)}\r`);
+
   const stop = (() => {
     clearInterval(timer);
-    stream.write(`\r${' '.repeat(maxLen + 10)}\r`);
+    clear();
   }) as SpinnerController;
+
+  stop.log = (line: string) => {
+    clear();
+    stream.write(`${line}\n`);
+    draw();
+  };
 
   stop.update = (newText: string) => {
     currentText = newText;

@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { delimiter, join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { isAgyBlob, parseBlob } from '../src/agy.js';
+import { finalFrame, isAgyBlob, parseBlob } from '../src/agy.js';
 import { chromePath, guestBrowserEnv } from '../src/browser.js';
 import { UserError, parseArgs } from '../src/args.js';
 import { catalogFromSnapshot, describeDiff, diffCatalog, isEmptyDiff } from '../src/catalog.js';
@@ -431,3 +431,13 @@ describe('spinner command and controller', () => {
   });
 });
 
+
+describe('finalFrame', () => {
+  it('keeps only what agy left after its last redraw', () => {
+    expect(finalFrame('\u25d0 checking\r\u25d3 checking\rfound new version 1.2.0')).toBe(
+      'found new version 1.2.0',
+    );
+    expect(finalFrame('already up to date')).toBe('already up to date');
+    expect(finalFrame('\r   \r  ')).toBe('');
+  });
+});

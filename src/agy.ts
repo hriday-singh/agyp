@@ -7,7 +7,7 @@
  * skills, MCP config and trusted workspaces are all shared. Swapping that one
  * entry is therefore the whole of "switching profiles".
  */
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import * as keyring from './keyring.js';
 
 export const AGY_SERVICE = 'gemini';
@@ -98,6 +98,55 @@ export function agyVersion(): string | null {
   });
   const first = `${r.stdout ?? ''}${r.stderr ?? ''}`.trim().split(/\r?\n/)[0]?.trim() ?? '';
   return /^\d+\.\d+/.test(first) ? first : null;
+}
+
+/**
+ * What a carriage-return-redrawn line actually reads as once it settles: the
+ * text after the last `\r`. Empty when the line held nothing but whitespace.
+ */
+export function finalFrame(raw: string): string {
+  const line = (raw.split('\r').pop() ?? '').trimEnd();
+  return line.trim() ? line : '';
+}
+
+/**
+ * Run `agy` with its output captured instead of inherited, so our spinner owns
+ * the terminal line while agy's real messages still get through. Async because
+ * a spinner cannot tick through `spawnSync`.
+ *
+ * `onLine` only sees completed lines, and only what survives the last `\r` on
+ * one — agy redraws its own spinner in place, so those frames collapse into the
+ * final text and never reach the terminal.
+ */
+export function runAgyQuiet(
+  args: string[],
+  onLine?: (line: string) => void,
+): Promise<{ code: number; output: string }> {
+  return new Promise((resolve, reject) => {
+    const child = spawn('agy', args, { shell: process.platform === 'win32', windowsHide: true });
+    let output = '';
+    let buffer = '';
+
+    const emit = (raw: string) => {
+      const line = finalFrame(raw);
+      if (line) onLine?.(line);
+    };
+    const collect = (d: Buffer) => {
+      output += d.toString();
+      buffer += d.toString();
+      const parts = buffer.split('\n');
+      buffer = parts.pop() ?? '';
+      for (const part of parts) emit(part);
+    };
+
+    child.stdout.on('data', collect);
+    child.stderr.on('data', collect);
+    child.on('error', (e) => reject(new Error(`could not launch agy: ${e.message}`)));
+    child.on('close', (code) => {
+      if (buffer) emit(buffer);
+      resolve({ code: code ?? 0, output });
+    });
+  });
 }
 
 /** Run `agy` attached to this terminal. Returns its exit code. */

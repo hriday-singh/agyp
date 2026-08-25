@@ -10,7 +10,7 @@
  * read instead of decrypting every profile.
  */
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { findBestMatch, formatSuggestion } from './suggest.js';
@@ -42,6 +42,10 @@ export function vaultDir(): string {
   return process.env.AGYP_HOME || join(homedir(), '.agy-profiler');
 }
 
+export function secretsDir(): string {
+  return join(vaultDir(), 'secrets');
+}
+
 export function indexPath(): string {
   return join(vaultDir(), 'profiles.json');
 }
@@ -67,16 +71,56 @@ export function saveIndex(index: VaultIndex): void {
   writeFileSync(indexPath(), JSON.stringify(index, null, 2) + '\n', { mode: 0o600 });
 }
 
+function encodeAccount(account: string): string {
+  return Buffer.from(account, 'utf8').toString('hex');
+}
+
 export function getSecret(email: string): string | null {
-  return keyring.get(VAULT_SERVICE, email);
+  try {
+    const val = keyring.get(VAULT_SERVICE, email);
+    if (val !== null) return val;
+  } catch {
+    // Keyring unavailable, fall back to file store
+  }
+  const file = join(secretsDir(), encodeAccount(email));
+  if (existsSync(file)) {
+    try {
+      return readFileSync(file, 'utf8');
+    } catch {
+      return null;
+    }
+  }
+  return null;
 }
 
 export function setSecret(email: string, raw: string): void {
-  keyring.set(VAULT_SERVICE, email, raw);
+  let keyringSuccess = false;
+  try {
+    keyring.set(VAULT_SERVICE, email, raw);
+    keyringSuccess = true;
+  } catch {
+    // Keyring unavailable, fall back to file store
+  }
+  if (!keyringSuccess) {
+    mkdirSync(secretsDir(), { recursive: true, mode: 0o700 });
+    writeFileSync(join(secretsDir(), encodeAccount(email)), raw, { mode: 0o600 });
+  }
 }
 
 export function delSecret(email: string): void {
-  keyring.del(VAULT_SERVICE, email);
+  try {
+    keyring.del(VAULT_SERVICE, email);
+  } catch {
+    // Ignore keyring failure
+  }
+  const file = join(secretsDir(), encodeAccount(email));
+  if (existsSync(file)) {
+    try {
+      rmSync(file, { force: true });
+    } catch {
+      // Ignore
+    }
+  }
 }
 
 /**

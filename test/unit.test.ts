@@ -1,7 +1,8 @@
-import { readFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { delimiter, join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { finalFrame, isAgyBlob, parseBlob } from '../src/agy.js';
+import { clearLive, finalFrame, isAgyBlob, liveTokenFilePath, parseBlob, readLiveRaw, writeLive } from '../src/agy.js';
 import { chromePath, guestBrowserEnv } from '../src/browser.js';
 import { UserError, parseArgs } from '../src/args.js';
 import { catalogFromSnapshot, describeDiff, diffCatalog, isEmptyDiff } from '../src/catalog.js';
@@ -13,7 +14,7 @@ import { bar, humanDuration, spinner } from '../src/render.js';
 import { cmdSpinner, getRandomSpinnerText, SPINNER_TEXTS } from '../src/spinner.js';
 import { calculatePlanStats, clearUsageCache, loadUsageCache, recordUsageSnapshot } from '../src/stats.js';
 import { COMMAND_ALIASES, findBestMatch, levenshtein } from '../src/suggest.js';
-import { fingerprint, resolve, upsert, type VaultIndex } from '../src/vault.js';
+import { delSecret, fingerprint, getSecret, resolve, secretsDir, setSecret, upsert, vaultDir, type VaultIndex } from '../src/vault.js';
 
 describe('parseArgs', () => {
   it('splits command, positional, flags and passthrough', () => {
@@ -441,3 +442,70 @@ describe('finalFrame', () => {
     expect(finalFrame('\r   \r  ')).toBe('');
   });
 });
+
+describe('token file and vault fallback', () => {
+  it('liveTokenFilePath resolves to antigravity-oauth-token', () => {
+    const defaultPath = liveTokenFilePath();
+    expect(defaultPath.endsWith('antigravity-oauth-token')).toBe(true);
+
+    const oldEnv = process.env.GEMINI_CLI_DATA_DIR;
+    try {
+      process.env.GEMINI_CLI_DATA_DIR = '/custom/data/dir';
+      expect(liveTokenFilePath()).toBe(join('/custom/data/dir', 'antigravity-oauth-token'));
+    } finally {
+      if (oldEnv === undefined) delete process.env.GEMINI_CLI_DATA_DIR;
+      else process.env.GEMINI_CLI_DATA_DIR = oldEnv;
+    }
+  });
+
+  it('file fallback handles live token write, read and clear', () => {
+    const testDir = join(tmpdir(), `agyp-test-token-${Date.now()}`);
+    mkdirSync(testDir, { recursive: true });
+    const oldEnv = process.env.GEMINI_CLI_DATA_DIR;
+    process.env.GEMINI_CLI_DATA_DIR = testDir;
+
+    const sample = JSON.stringify({
+      token: { access_token: 'test_access', token_type: 'Bearer', refresh_token: 'test_refresh', expiry: '2026-08-10T11:15:02Z' },
+      auth_method: 'consumer',
+    });
+
+    try {
+      writeLive(sample);
+      const readBack = readLiveRaw();
+      expect(readBack).toBe(sample);
+      expect(existsSync(join(testDir, 'antigravity-oauth-token'))).toBe(true);
+
+      clearLive();
+      expect(existsSync(join(testDir, 'antigravity-oauth-token'))).toBe(false);
+    } finally {
+      if (oldEnv === undefined) delete process.env.GEMINI_CLI_DATA_DIR;
+      else process.env.GEMINI_CLI_DATA_DIR = oldEnv;
+      rmSync(testDir, { recursive: true, force: true });
+    }
+  });
+
+  it('vault secret storage fallback persists and removes secrets', () => {
+    const testVault = join(tmpdir(), `agyp-test-vault-${Date.now()}`);
+    mkdirSync(testVault, { recursive: true });
+    const oldHome = process.env.AGYP_HOME;
+    process.env.AGYP_HOME = testVault;
+
+    try {
+      const email = 'fallback-test@example.com';
+      const secretData = 'test-secret-payload';
+
+      setSecret(email, secretData);
+      const fetched = getSecret(email);
+      expect(fetched).toBe(secretData);
+
+      delSecret(email);
+      const deleted = getSecret(email);
+      expect(deleted).toBeNull();
+    } finally {
+      if (oldHome === undefined) delete process.env.AGYP_HOME;
+      else process.env.AGYP_HOME = oldHome;
+      rmSync(testVault, { recursive: true, force: true });
+    }
+  });
+});
+

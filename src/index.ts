@@ -535,7 +535,7 @@ function cmdDoctor(): void {
   const backend = keyring.backendAvailable();
   const line = (ok: boolean, text: string) => console.log(`${ok ? green('ok  ') : red('fail')} ${text}`);
 
-  line(backend.ok, `keyring: ${backend.ok ? keyring.backendName() : backend.detail}`);
+  line(backend.ok, `keyring: ${backend.ok ? keyring.backendName() : `${backend.detail} (file storage fallback active)`}`);
 
   const path = agy.agyPath();
   line(Boolean(path), `agy binary: ${path ?? 'not found on PATH'}`);

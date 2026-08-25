@@ -128,7 +128,11 @@ export function get(service: string, account: string): string | null {
   }
   const r = run('secret-tool', ['lookup', 'service', service, 'username', account]);
   if (r.error) throw missingBackend('secret-tool');
-  if (r.status !== 0) return null;
+  if (r.status !== 0) {
+    const err = (r.stderr || '').trim();
+    if (err) throw new KeyringError(`secret-tool lookup failed: ${err}`);
+    return null;
+  }
   return r.stdout.replace(/\n$/, '');
 }
 
@@ -166,7 +170,12 @@ export function del(service: string, account: string): void {
     run('security', ['delete-generic-password', '-s', service, '-a', account]);
     return;
   }
-  run('secret-tool', ['clear', 'service', service, 'username', account]);
+  const r = run('secret-tool', ['clear', 'service', service, 'username', account]);
+  if (r.error) throw missingBackend('secret-tool');
+  if (r.status !== 0) {
+    const err = (r.stderr || '').trim();
+    if (err) throw new KeyringError(`secret-tool clear failed: ${err}`);
+  }
 }
 
 /** True when the platform's keyring backend is reachable. Used by `agyp doctor`. */

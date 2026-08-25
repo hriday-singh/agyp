@@ -28,14 +28,14 @@ npm link          # puts `agyp` on your PATH
 
 Requires Node 18+ and the `agy` CLI on your PATH.
 
-On Linux you also need a Secret Service keyring — that is what `agy` itself uses:
+On Linux with a graphical session, `agyp` integrates with Secret Service keyrings:
 
 ```bash
 sudo apt install libsecret-tools      # Debian/Ubuntu
 sudo dnf install libsecret            # Fedora
 ```
 
-with `gnome-keyring` or `kwallet` running. `agyp doctor` tells you if it is not.
+with `gnome-keyring` or `kwallet` running. On headless Linux, containers, or SSH sessions without a D-Bus Secret Service daemon, `agyp` automatically falls back to secure file-based storage (`0600` permissions in `~/.agy-profiler/secrets/` and `~/.gemini/antigravity-cli/antigravity-oauth-token`). `agyp doctor` reports the active storage mode.
 
 ## Getting started
 
@@ -152,13 +152,12 @@ almost always what you want.
 
 | What | Where |
 | --- | --- |
-| Profile tokens | OS keyring, service `agy-profiler`, one entry per email |
+| Profile tokens | OS keyring (service `agy-profiler`), or secure fallback in `~/.agy-profiler/secrets/` (0600) |
 | Profile metadata (no secrets) | `~/.agy-profiler/profiles.json` |
 | Last-seen model catalog | `~/.agy-profiler/models.json` |
-| `agy`'s live credential | OS keyring, service `gemini`, account `antigravity` |
+| `agy`'s live credential | OS keyring (`gemini:antigravity`), or `~/.gemini/antigravity-cli/antigravity-oauth-token` |
 
-No token is ever written to disk in plaintext. `AGYP_HOME` overrides the metadata
-directory.
+`AGYP_HOME` overrides the vault metadata and fallback secrets directory.
 
 ## Development
 

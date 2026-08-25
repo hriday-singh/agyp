@@ -32,15 +32,16 @@ That is the complete account identity. Everything else under `~/.gemini/` —
 `antigravity-cli/settings.json`, conversation history, skills, plugins, MCP
 config, trusted workspaces — is account-independent and shared.
 
-There is no file fallback: the binary's error strings include
-`no D-Bus session bus-keyring-unavailable`, so on Linux a keyring daemon is
-mandatory for `agy` itself, not just for us.
+When the OS keyring daemon is unavailable (such as headless Linux, SSH, or WSL
+environments without D-Bus Secret Service), `agy` falls back to storing the token
+in `~/.gemini/antigravity-cli/antigravity-oauth-token`. `agyp` checks the OS keyring
+first and falls back to this file, mirroring writes to both when switching profiles.
 
 Two things follow:
 
-1. **A profile switch is a single keyring write.** No file shuffling, no
-   `%APPDATA%` redirection, no per-profile home directories.
-2. **There is exactly one slot.** Two accounts cannot be live at once on one
+1. **A profile switch updates the live keyring entry and token file.** No file
+   shuffling, no `%APPDATA%` redirection, no per-profile home directories.
+2. **There is exactly one active slot.** Two accounts cannot be live at once on one
    Windows/Linux user account. Parallel sessions would need separate OS users.
 
 `%APPDATA%/antigravity-usage/` looks related but is not — it belongs to the

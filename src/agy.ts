@@ -8,10 +8,18 @@
  * entry is therefore the whole of "switching profiles".
  */
 import { spawn, spawnSync } from 'node:child_process';
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { dirname, join } from 'node:path';
 import * as keyring from './keyring.js';
 
 export const AGY_SERVICE = 'gemini';
 export const AGY_ACCOUNT = 'antigravity';
+
+export function liveTokenFilePath(): string {
+  const base = process.env.GEMINI_CLI_DATA_DIR || join(homedir(), '.gemini', 'antigravity-cli');
+  return join(base, 'antigravity-oauth-token');
+}
 
 /** Shape of the blob `agy` writes. `expiry` is RFC3339 with offset. */
 export interface AgyBlob {
@@ -47,21 +55,58 @@ export function isAgyBlob(value: unknown): value is AgyBlob {
 
 /** Read the credential `agy` is currently authenticated with. */
 export function readLive(): AgyBlob | null {
-  const raw = keyring.get(AGY_SERVICE, AGY_ACCOUNT);
+  const raw = readLiveRaw();
   return raw === null ? null : parseBlob(raw);
 }
 
 export function readLiveRaw(): string | null {
-  return keyring.get(AGY_SERVICE, AGY_ACCOUNT);
+  try {
+    const raw = keyring.get(AGY_SERVICE, AGY_ACCOUNT);
+    if (raw) return raw;
+  } catch {
+    // Keyring unavailable; fallback to file
+  }
+  const tokenPath = liveTokenFilePath();
+  if (existsSync(tokenPath)) {
+    try {
+      return readFileSync(tokenPath, 'utf8');
+    } catch {
+      return null;
+    }
+  }
+  return null;
 }
 
 export function writeLive(raw: string): void {
   parseBlob(raw); // refuse to install anything agy could not read back
-  keyring.set(AGY_SERVICE, AGY_ACCOUNT, raw);
+  try {
+    keyring.set(AGY_SERVICE, AGY_ACCOUNT, raw);
+  } catch {
+    // Keyring unavailable; file fallback will be written
+  }
+  const tokenPath = liveTokenFilePath();
+  try {
+    mkdirSync(dirname(tokenPath), { recursive: true, mode: 0o700 });
+    writeFileSync(tokenPath, raw, { mode: 0o600 });
+  } catch {
+    // Best-effort file fallback
+  }
 }
 
 export function clearLive(): void {
-  keyring.del(AGY_SERVICE, AGY_ACCOUNT);
+  try {
+    keyring.del(AGY_SERVICE, AGY_ACCOUNT);
+  } catch {
+    // Ignore keyring failure
+  }
+  const tokenPath = liveTokenFilePath();
+  if (existsSync(tokenPath)) {
+    try {
+      rmSync(tokenPath, { force: true });
+    } catch {
+      // Ignore removal failure
+    }
+  }
 }
 
 /**

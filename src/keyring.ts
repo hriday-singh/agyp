@@ -184,7 +184,11 @@ export function backendAvailable(): { ok: boolean; detail: string } {
     get('agy-profiler', '_probe');
     return { ok: true, detail: backendName() };
   } catch (err) {
-    return { ok: false, detail: err instanceof Error ? err.message : String(err) };
+    const raw = err instanceof Error ? err.message : String(err);
+    if (raw.includes('org.freedesktop.secrets')) {
+      return { ok: false, detail: 'Secret Service daemon not running' };
+    }
+    return { ok: false, detail: raw };
   }
 }
 

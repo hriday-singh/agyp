@@ -28,6 +28,7 @@ import {
   loadIndex,
   resolve,
   saveIndex,
+  secretsDir,
   setSecret,
   upsert,
   type ProfileMeta,
@@ -535,7 +536,11 @@ function cmdDoctor(): void {
   const backend = keyring.backendAvailable();
   const line = (ok: boolean, text: string) => console.log(`${ok ? green('ok  ') : red('fail')} ${text}`);
 
-  line(backend.ok, `keyring: ${backend.ok ? keyring.backendName() : `${backend.detail} (file storage fallback active)`}`);
+  if (backend.ok) {
+    line(true, `keyring: ${keyring.backendName()}`);
+  } else {
+    line(true, `storage: file storage fallback (${backend.detail})`);
+  }
 
   const path = agy.agyPath();
   line(Boolean(path), `agy binary: ${path ?? 'not found on PATH'}`);
@@ -555,7 +560,11 @@ function cmdDoctor(): void {
   }
 
   line(!agy.agyRunning(), agy.agyRunning() ? 'agy is running — switching is blocked' : 'agy is not running');
-  console.log(dim(`  secrets stored under keyring service "${VAULT_SERVICE}"`));
+  if (backend.ok) {
+    console.log(dim(`  secrets stored under keyring service "${VAULT_SERVICE}"`));
+  } else {
+    console.log(dim(`  secrets stored in ${secretsDir()}`));
+  }
 }
 
 // ---------------------------------------------------------------- entrypoint

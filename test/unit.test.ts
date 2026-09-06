@@ -10,11 +10,12 @@ import { parseSnapshot, shouldShowModel } from '../src/google.js';
 import { COMMAND_HELP, HELP } from '../src/help.js';
 import { validateLabel } from '../src/index.js';
 import { winTarget } from '../src/keyring.js';
-import { bar, humanDuration, spinner } from '../src/render.js';
+import { bar, humanDuration, renderWeeklyProfile, renderWeeklyReport, spinner } from '../src/render.js';
 import { cmdSpinner, getRandomSpinnerText, SPINNER_TEXTS } from '../src/spinner.js';
-import { calculatePlanStats, clearUsageCache, loadUsageCache, recordUsageSnapshot } from '../src/stats.js';
+import { calculatePlanStats, clearUsageCache, findHealthiestProfile, loadUsageCache, rankProfileHealth, recordUsageSnapshot } from '../src/stats.js';
 import { COMMAND_ALIASES, findBestMatch, levenshtein } from '../src/suggest.js';
 import { delSecret, fingerprint, getSecret, resolve, secretsDir, setSecret, upsert, vaultDir, type VaultIndex } from '../src/vault.js';
+import { buildWeeklyReport, MS_PER_DAY, type ProfileWeeklyReport } from '../src/weekly.js';
 
 describe('parseArgs', () => {
   it('splits command, positional, flags and passthrough', () => {
@@ -509,3 +510,272 @@ describe('token file and vault fallback', () => {
   });
 });
 
+describe('weekly quota tracking & forecasting', () => {
+  const baseNow = Date.parse('2026-08-19T10:00:00Z');
+
+  it('builds weekly report and identifies the earliest reset', () => {
+    const report = buildWeeklyReport(
+      {
+        email: 'bonka@gmail.com',
+        planType: 'Google AI Pro',
+        models: [
+          {
+            label: 'Gemini 3.1 Pro (High)',
+            modelIds: ['gemini-3.1-pro-high'],
+            remainingPercentage: 0.4,
+            isExhausted: false,
+            resetTime: '2026-08-20T14:00:00Z', // 28 hours later -> weekly / multi-day
+          },
+          {
+            label: 'Claude Sonnet 4.6 (Thinking)',
+            modelIds: ['claude-sonnet-4-6'],
+            remainingPercentage: 0,
+            isExhausted: true,
+            resetTime: '2026-08-22T18:00:00Z', // 3 days 8 hours later
+          },
+          {
+            label: 'Gemini 3.1 Flash Lite',
+            modelIds: ['gemini-3.1-flash-lite'],
+            remainingPercentage: 0.9,
+            isExhausted: false,
+            resetTime: '2026-08-19T14:30:00Z', // 4.5 hours later -> rolling pool
+          },
+        ],
+      },
+      'bonka',
+      baseNow,
+    );
+
+    expect(report.email).toBe('bonka@gmail.com');
+    expect(report.label).toBe('bonka');
+    expect(report.planType).toBe('Google AI Pro');
+    expect(report.totalModels).toBe(3);
+    expect(report.exhaustedCount).toBe(1);
+    expect(report.lowCount).toBe(0);
+    expect(report.healthyCount).toBe(2);
+
+    // Earliest reset should be Gemini 3.1 Flash Lite (4h 30m away)
+    expect(report.earliestReset).toBeDefined();
+    expect(report.earliestReset?.modelLabel).toBe('Gemini 3.1 Flash Lite');
+    expect(report.earliestReset?.humanDuration).toBe('4h 30m');
+
+    // Categorization:
+    // Gemini 3.1 Pro (28h) and Claude (80h) > 24h -> weeklyModels
+    // Gemini 3.1 Flash Lite (4.5h) <= 24h -> rollingModels
+    expect(report.weeklyModels.map((m) => m.label)).toEqual([
+      'Gemini 3.1 Pro (High)',
+      'Claude Sonnet 4.6 (Thinking)',
+    ]);
+    expect(report.rollingModels.map((m) => m.label)).toEqual(['Gemini 3.1 Flash Lite']);
+  });
+
+  it('handles models with no reset time and models that are low on capacity', () => {
+    const report = buildWeeklyReport(
+      {
+        email: 'user@gmail.com',
+        models: [
+          {
+            label: 'GPT-OSS 120B',
+            modelIds: ['gpt-oss-120b'],
+            remainingPercentage: 0.1, // low (< 20%)
+            isExhausted: false,
+          },
+          {
+            label: 'Gemini 2.5 Pro',
+            modelIds: ['gemini-2.5-pro'],
+            remainingPercentage: 0.8,
+            isExhausted: false,
+          },
+        ],
+      },
+      'work',
+      baseNow,
+    );
+
+    expect(report.earliestReset).toBeUndefined();
+    expect(report.lowCount).toBe(1);
+    expect(report.healthyCount).toBe(1);
+    expect(report.exhaustedCount).toBe(0);
+    expect(report.weeklyModels).toHaveLength(0);
+    expect(report.rollingModels).toHaveLength(2);
+  });
+
+  it('renders weekly profile and report outputs with colors and formatting', () => {
+    const report: ProfileWeeklyReport = {
+      email: 'bonka@gmail.com',
+      label: 'bonka',
+      planType: 'Google AI Pro',
+      earliestReset: {
+        modelLabel: 'Gemini 3.1 Pro',
+        timeUntilResetMs: 28 * 3600 * 1000,
+        humanDuration: '1d 4h',
+      },
+      weeklyModels: [
+        {
+          label: 'Gemini 3.1 Pro',
+          modelIds: ['gemini-3.1-pro'],
+          remainingPercentage: 0.5,
+          isExhausted: false,
+          timeUntilResetMs: 28 * 3600 * 1000,
+        },
+      ],
+      rollingModels: [
+        {
+          label: 'Gemini Flash',
+          modelIds: ['gemini-flash'],
+          remainingPercentage: 1,
+          isExhausted: false,
+          timeUntilResetMs: 2 * 3600 * 1000,
+        },
+      ],
+      exhaustedCount: 0,
+      lowCount: 0,
+      healthyCount: 2,
+      totalModels: 2,
+    };
+
+    const rendered = renderWeeklyProfile(report);
+    expect(rendered).toContain('bonka (bonka@gmail.com)');
+    expect(rendered).toContain('Google AI Pro');
+    expect(rendered).toContain('Earliest reset:');
+    expect(rendered).toContain('1d 4h');
+    expect(rendered).toContain('Weekly / Multi-Day Pools:');
+    expect(rendered).toContain('Rolling / Daily Pools:');
+    expect(rendered).toContain('2 healthy');
+
+    const fullReport = renderWeeklyReport([report]);
+    expect(fullReport).toContain('bonka (bonka@gmail.com)');
+
+    const emptyReport = renderWeeklyReport([]);
+    expect(emptyReport).toContain('no profiles available');
+  });
+
+  it('maps weekly aliases and updates command help', () => {
+    expect(COMMAND_ALIASES.week).toBe('weekly');
+    expect(COMMAND_ALIASES.forecast).toBe('weekly');
+    expect(COMMAND_ALIASES.resets).toBe('weekly');
+    expect(COMMAND_ALIASES.schedule).toBe('weekly');
+
+    expect(HELP).toContain('weekly [target]');
+    expect(HELP).toContain('--weekly');
+    expect(COMMAND_HELP.weekly).toBeDefined();
+    expect(COMMAND_HELP.weekly).toContain('agyp weekly');
+  });
+
+  it('parses --weekly flag from arguments', () => {
+    const p1 = parseArgs(['usage', '--weekly']);
+    expect(p1.command).toBe('usage');
+    expect(p1.flags.has('weekly')).toBe(true);
+
+    const p2 = parseArgs(['weekly', 'bonka', '--json']);
+    expect(p2.command).toBe('weekly');
+    expect(p2.positional).toEqual(['bonka']);
+    expect(p2.flags.has('json')).toBe(true);
+  });
+});
+
+describe('healthiest profile auto-selection', () => {
+  it('ranks profiles by health score and chooses zero-exhausted over exhausted pools', () => {
+    const snapshots = [
+      {
+        email: 'exhausted@gmail.com',
+        models: [
+          { label: 'Gemini 3.1 Pro', modelIds: ['gemini-3.1-pro'], remainingPercentage: 0, isExhausted: true },
+          { label: 'Claude', modelIds: ['claude'], remainingPercentage: 1, isExhausted: false },
+        ],
+      },
+      {
+        email: 'healthy@gmail.com',
+        models: [
+          { label: 'Gemini 3.1 Pro', modelIds: ['gemini-3.1-pro'], remainingPercentage: 0.8, isExhausted: false },
+          { label: 'Claude', modelIds: ['claude'], remainingPercentage: 0.7, isExhausted: false },
+        ],
+      },
+    ];
+
+    const ranked = snapshots.map(rankProfileHealth);
+    expect(ranked.find((r) => r.email === 'healthy@gmail.com')?.exhaustedCount).toBe(0);
+    expect(ranked.find((r) => r.email === 'exhausted@gmail.com')?.exhaustedCount).toBe(1);
+
+    const healthiest = findHealthiestProfile(snapshots);
+    expect(healthiest?.email).toBe('healthy@gmail.com');
+  });
+
+  it('selects profile with highest average quota among healthy accounts', () => {
+    const snapshots = [
+      {
+        email: 'medium@gmail.com',
+        models: [
+          { label: 'Gemini 3.1 Pro', modelIds: ['gemini-3.1-pro'], remainingPercentage: 0.5, isExhausted: false },
+        ],
+      },
+      {
+        email: 'high@gmail.com',
+        models: [
+          { label: 'Gemini 3.1 Pro', modelIds: ['gemini-3.1-pro'], remainingPercentage: 0.95, isExhausted: false },
+        ],
+      },
+    ];
+
+    const healthiest = findHealthiestProfile(snapshots);
+    expect(healthiest?.email).toBe('high@gmail.com');
+    expect(healthiest?.avgQuotaPercentage).toBe(95);
+  });
+
+  it('preserves active account if tied for top score', () => {
+    const snapshots = [
+      {
+        email: 'account-a@gmail.com',
+        models: [{ label: 'Model', modelIds: ['m'], remainingPercentage: 1, isExhausted: false }],
+      },
+      {
+        email: 'account-b@gmail.com',
+        models: [{ label: 'Model', modelIds: ['m'], remainingPercentage: 1, isExhausted: false }],
+      },
+    ];
+
+    const pickA = findHealthiestProfile(snapshots, 'account-a@gmail.com');
+    expect(pickA?.email).toBe('account-a@gmail.com');
+
+    const pickB = findHealthiestProfile(snapshots, 'account-b@gmail.com');
+    expect(pickB?.email).toBe('account-b@gmail.com');
+  });
+
+  it('handles empty snapshots gracefully', () => {
+    expect(findHealthiestProfile([])).toBeNull();
+  });
+
+  it('maps auto and autorun aliases and updates command help', () => {
+    expect(COMMAND_ALIASES.best).toBe('auto');
+    expect(COMMAND_ALIASES.pick).toBe('auto');
+    expect(COMMAND_ALIASES['auto-use']).toBe('auto');
+    expect(COMMAND_ALIASES['auto-run']).toBe('autorun');
+    expect(COMMAND_ALIASES['run-auto']).toBe('autorun');
+
+    expect(HELP).toContain('auto');
+    expect(HELP).toContain('autorun');
+    expect(HELP).toContain('--auto');
+    expect(COMMAND_HELP.auto).toBeDefined();
+    expect(COMMAND_HELP.auto).toContain('agyp auto');
+    expect(COMMAND_HELP.autorun).toBeDefined();
+    expect(COMMAND_HELP.autorun).toContain('agyp autorun');
+  });
+
+  it('parses auto commands and flags', () => {
+    const p1 = parseArgs(['use', '--auto']);
+    expect(p1.command).toBe('use');
+    expect(p1.flags.has('auto')).toBe(true);
+
+    const p2 = parseArgs(['run', '--auto', '--', '--verbose']);
+    expect(p2.command).toBe('run');
+    expect(p2.flags.has('auto')).toBe(true);
+    expect(p2.passthrough).toEqual(['--verbose']);
+
+    const p3 = parseArgs(['auto']);
+    expect(p3.command).toBe('auto');
+
+    const p4 = parseArgs(['autorun', '--', 'start']);
+    expect(p4.command).toBe('autorun');
+    expect(p4.passthrough).toEqual(['start']);
+  });
+});

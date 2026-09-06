@@ -13,8 +13,11 @@ import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import { findBestMatch, formatSuggestion } from './suggest.js';
+import { parseBlob, readLiveRaw, writeLive } from './agy.js';
+import { UserError } from './args.js';
+import { fetchQuota, type Snapshot } from './google.js';
 import * as keyring from './keyring.js';
+import { findBestMatch, formatSuggestion } from './suggest.js';
 
 export const VAULT_SERVICE = 'agy-profiler';
 /** Holds the outgoing credential while `agyp login` runs, so a crash can't lose it. */
@@ -121,6 +124,51 @@ export function delSecret(email: string): void {
       // Ignore
     }
   }
+}
+
+export function activeEmail(index: VaultIndex): string | null {
+  const raw = readLiveRaw();
+  if (!raw) return null;
+  try {
+    const print = fingerprint(parseBlob(raw).token.refresh_token);
+    return index.profiles.find((p) => p.fingerprint === print)?.email ?? null;
+  } catch {
+    return null;
+  }
+}
+
+export function install(index: VaultIndex, profile: ProfileMeta): VaultIndex {
+  const raw = getSecret(profile.email);
+  if (!raw) {
+    throw new UserError(
+      `no stored credential for ${profile.email} — the keyring entry is gone. Run \`agyp login\` to re-add it.`,
+    );
+  }
+  writeLive(raw);
+  return { ...upsert(index, { ...profile, lastUsed: new Date().toISOString() }), active: profile.email };
+}
+
+export function validateLabel(label: string, currentEmail?: string, index?: VaultIndex): string {
+  const trimmed = label.trim();
+  if (/^\d+$/.test(trimmed)) {
+    throw new UserError('labels cannot be numbers only');
+  }
+  if (index) {
+    const duplicate = index.profiles.find(
+      (p) => p.email !== currentEmail && p.label?.toLowerCase() === trimmed.toLowerCase(),
+    );
+    if (duplicate) {
+      throw new UserError(`label "${trimmed}" is already used by ${duplicate.email}`);
+    }
+  }
+  return trimmed;
+}
+
+export async function snapshotFor(profile: ProfileMeta): Promise<{ snapshot: Snapshot; projectId?: string }> {
+  const raw = getSecret(profile.email);
+  if (!raw) throw new Error(`no stored credential for ${profile.email}`);
+  const blob = parseBlob(raw);
+  return fetchQuota(blob.token.refresh_token, profile.email, profile.projectId);
 }
 
 /**

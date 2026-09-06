@@ -53,6 +53,10 @@ third-party `antigravity-usage` npm package. We do not read or write it.
 src/
   index.ts     command dispatch and the workflows (the only file with policy in it)
   help.ts      CLI help text and command descriptions
+  weekly.ts    weekly quota analysis, categorization, and reset forecasting
+  stats.ts     aggregate usage statistics across accounts and plans
+  spinner.ts   interactive loading spinner controller and demo
+  suggest.ts   did-you-mean command and target suggestions
   agy.ts       the live credential, process detection, launching agy
   vault.ts     profile storage: keyring for secrets, JSON index for metadata
   keyring.ts   the one place that knows about Credential Manager / libsecret / Keychain

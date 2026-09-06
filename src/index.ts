@@ -16,24 +16,31 @@ import { COMMAND_HELP, HELP } from './help.js';
 import * as keyring from './keyring.js';
 import { bold, cyan, dim, green, red, renderSnapshot, spinner, yellow } from './render.js';
 import { cmdSpinner } from './spinner.js';
-import { cmdStats, recordUsageSnapshot } from './stats.js';
+import { cmdStats, findHealthiestProfile, recordUsageSnapshot, type HealthiestProfileResult } from './stats.js';
 import { ALL_COMMAND_NAMES, COMMAND_ALIASES, findBestMatch, formatSuggestion } from './suggest.js';
+import { cmdWeekly } from './weekly.js';
 import {
   PENDING_ACCOUNT,
   VAULT_SERVICE,
+  activeEmail,
   delSecret,
   fingerprint,
   getSecret,
   indexPath,
+  install,
   loadIndex,
   resolve,
   saveIndex,
   secretsDir,
   setSecret,
+  snapshotFor,
   upsert,
+  validateLabel,
   type ProfileMeta,
   type VaultIndex,
 } from './vault.js';
+
+export { validateLabel } from './vault.js';
 
 const now = () => new Date().toISOString();
 
@@ -111,44 +118,6 @@ async function identify(raw: string): Promise<{ email: string; projectId?: strin
   const blob = agy.parseBlob(raw);
   const accessToken = await refreshAccessToken(blob.token.refresh_token);
   return { email: await fetchEmail(accessToken) };
-}
-
-function activeEmail(index: VaultIndex): string | null {
-  const raw = agy.readLiveRaw();
-  if (!raw) return null;
-  try {
-    const print = fingerprint(agy.parseBlob(raw).token.refresh_token);
-    return index.profiles.find((p) => p.fingerprint === print)?.email ?? null;
-  } catch {
-    return null;
-  }
-}
-
-function install(index: VaultIndex, profile: ProfileMeta): VaultIndex {
-  const raw = getSecret(profile.email);
-  if (!raw) {
-    throw new UserError(
-      `no stored credential for ${profile.email} — the keyring entry is gone. Run \`agyp login\` to re-add it.`,
-    );
-  }
-  agy.writeLive(raw);
-  return { ...upsert(index, { ...profile, lastUsed: now() }), active: profile.email };
-}
-
-export function validateLabel(label: string, currentEmail?: string, index?: VaultIndex): string {
-  const trimmed = label.trim();
-  if (/^\d+$/.test(trimmed)) {
-    throw new UserError('labels cannot be numbers only');
-  }
-  if (index) {
-    const duplicate = index.profiles.find(
-      (p) => p.email !== currentEmail && p.label?.toLowerCase() === trimmed.toLowerCase(),
-    );
-    if (duplicate) {
-      throw new UserError(`label "${trimmed}" is already used by ${duplicate.email}`);
-    }
-  }
-  return trimmed;
 }
 
 // ---------------------------------------------------------------- commands
@@ -336,11 +305,79 @@ async function cmdRun(
   process.exit(code);
 }
 
-async function snapshotFor(profile: ProfileMeta): Promise<{ snapshot: Snapshot; projectId?: string }> {
-  const raw = getSecret(profile.email);
-  if (!raw) throw new Error(`no stored credential for ${profile.email}`);
-  const blob = agy.parseBlob(raw);
-  return fetchQuota(blob.token.refresh_token, profile.email, profile.projectId);
+async function resolveHealthiestProfile(
+  index: VaultIndex,
+): Promise<{ profile: ProfileMeta; healthiest: HealthiestProfileResult }> {
+  if (index.profiles.length === 0) {
+    throw new UserError('no profiles yet — run `agyp adopt` or `agyp login`');
+  }
+
+  const stop = spinner('checking accounts for healthiest quota');
+  const results = await Promise.allSettled(index.profiles.map(snapshotFor)).finally(stop);
+  const validSnapshots: Snapshot[] = [];
+
+  results.forEach((res) => {
+    if (res.status === 'fulfilled') {
+      validSnapshots.push(res.value.snapshot);
+      recordUsageSnapshot(res.value.snapshot);
+    }
+  });
+
+  if (validSnapshots.length === 0) {
+    throw new UserError('failed to fetch quota for any profile — check network connectivity');
+  }
+
+  const active = activeEmail(index);
+  const healthiest = findHealthiestProfile(validSnapshots, active);
+  if (!healthiest) throw new UserError('no healthy profile found');
+  const profile = resolve(index, healthiest.email);
+  return { profile, healthiest };
+}
+
+async function cmdAutoUse(force: boolean): Promise<void> {
+  requireIdle(force);
+  const stopSync = spinner('syncing credential');
+  let index: VaultIndex;
+  try {
+    index = await syncBack(loadIndex());
+  } finally {
+    stopSync();
+  }
+
+  const { profile, healthiest } = await resolveHealthiestProfile(index);
+  saveIndex(install(index, profile));
+  const labelStr = profile.label ? cyan(` (${profile.label})`) : '';
+  const metricsStr = dim(`[${healthiest.avgQuotaPercentage}% capacity, ${healthiest.exhaustedCount} exhausted]`);
+  console.log(`${green('active')} ${bold(profile.email)}${labelStr} ${metricsStr}`);
+}
+
+async function cmdAutoRun(
+  force: boolean,
+  defaultBrowser: boolean,
+  agyArgs: string[],
+): Promise<never> {
+  const stopSync = spinner('syncing credential');
+  let index: VaultIndex;
+  try {
+    index = await syncBack(loadIndex());
+  } finally {
+    stopSync();
+  }
+
+  requireIdle(force);
+  const { profile, healthiest } = await resolveHealthiestProfile(index);
+  index = install(index, profile);
+  saveIndex(index);
+  info(`running as ${profile.email} [${healthiest.avgQuotaPercentage}% capacity]`);
+
+  const code = agy.launchAgy(agyArgs, defaultBrowser ? undefined : (guestBrowserEnv() ?? undefined));
+  const stopBack = spinner('syncing profile updates');
+  try {
+    saveIndex(await syncBack(loadIndex()));
+  } finally {
+    stopBack();
+  }
+  process.exit(code);
 }
 
 async function cmdUsage(target: string | undefined, json: boolean): Promise<void> {
@@ -600,13 +637,28 @@ async function main(): Promise<void> {
     case 'list':
       return cmdList(json);
     case 'use':
+      if (flags.has('auto') || target === 'auto' || target === 'best') {
+        return cmdAutoUse(force);
+      }
       if (!target) throw new UserError('use: which profile? `agyp list` to see them');
       return cmdUse(target, force);
     case 'run':
+      if (flags.has('auto') || target === 'auto' || target === 'best') {
+        await cmdAutoRun(force, defaultBrowser, passthrough);
+        return;
+      }
       await cmdRun(target, force, defaultBrowser, passthrough);
       return;
+    case 'auto':
+      return cmdAutoUse(force);
+    case 'autorun':
+      await cmdAutoRun(force, defaultBrowser, passthrough);
+      return;
     case 'usage':
+      if (flags.has('weekly')) return cmdWeekly(flags.has('all') ? undefined : target, json, snapshotFor);
       return cmdUsage(flags.has('all') ? undefined : target, json);
+    case 'weekly':
+      return cmdWeekly(flags.has('all') ? undefined : target, json, snapshotFor);
     case 'update':
       return cmdUpdate(flags.has('check'), force);
     case 'status':

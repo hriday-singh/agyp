@@ -76,7 +76,10 @@ Rule of thumb: `use` to change the default account, `run` to start a session now
 | `agyp list` | Profiles, with a `●` on the one `agy` is using (aliases: `ls`, `show`, `all`) |
 | `agyp use <target>` | Make a profile the active account (aliases: `switch`, `select`, `set`) |
 | `agyp run [target] [-- args]` | Switch (if a target is given) and launch `agy`; anything after `--` is passed to `agy` (aliases: `start`, `exec`) |
+| `agyp auto` | Auto-select and switch to the healthiest profile with maximum quota (aliases: `best`, `pick`) |
+| `agyp autorun [-- args]` | Auto-select healthiest profile and launch `agy` immediately (aliases: `auto-run`) |
 | `agyp usage [target]` | Model quota and reset timers. No target = every profile (aliases: `quota`, `credits`) |
+| `agyp weekly [target]` | Weekly quota status, earliest reset countdown, and replenishment forecast (aliases: `week`, `forecast`, `resets`) |
 | `agyp plan` | Aggregate plan statistics, combined prompt credits, model quota pools, and recommended account (aliases: `stats`, `statistics`) |
 | `agyp update [--check]` | Update the `agy` CLI, then report which models were added, renamed or removed (aliases: `upgrade`) |
 | `agyp status` | What `agy` is authenticated as, and whether it matches a saved profile (aliases: `info`, `st`, `whoami`) |

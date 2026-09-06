@@ -78,14 +78,67 @@ export interface PlanStatistics {
   bestProfileForUse?: { email: string; avgQuotaPercentage: number };
 }
 
+export interface HealthiestProfileResult {
+  email: string;
+  avgQuotaPercentage: number;
+  exhaustedCount: number;
+  totalModels: number;
+  score: number;
+}
+
+export function rankProfileHealth(snapshot: Snapshot): HealthiestProfileResult {
+  let profileQuotaSum = 0;
+  let profileQuotaCount = 0;
+  let exhaustedCount = 0;
+
+  for (const m of snapshot.models) {
+    if (m.isExhausted || m.remainingPercentage === 0) {
+      exhaustedCount += 1;
+    }
+    const frac = m.remainingPercentage ?? (m.isExhausted ? 0 : 1);
+    profileQuotaSum += frac;
+    profileQuotaCount += 1;
+  }
+
+  const avgQuota = profileQuotaCount > 0 ? profileQuotaSum / profileQuotaCount : 1;
+  // Penalty of -1000 per exhausted model so non-exhausted accounts always beat accounts with exhausted models
+  const score = avgQuota * 100 - exhaustedCount * 1000;
+
+  return {
+    email: snapshot.email,
+    avgQuotaPercentage: Math.round(avgQuota * 100),
+    exhaustedCount,
+    totalModels: snapshot.models.length,
+    score,
+  };
+}
+
+export function findHealthiestProfile(
+  snapshots: Snapshot[],
+  activeEmail?: string | null,
+): HealthiestProfileResult | null {
+  if (snapshots.length === 0) return null;
+
+  const ranked = snapshots.map(rankProfileHealth);
+
+  ranked.sort((a, b) => {
+    if (b.score !== a.score) return b.score - a.score;
+    // Tie-breaker: if current active account has equal top score, keep it
+    if (activeEmail) {
+      if (a.email === activeEmail) return -1;
+      if (b.email === activeEmail) return 1;
+    }
+    return a.email.localeCompare(b.email);
+  });
+
+  return ranked[0] ?? null;
+}
+
 export function calculatePlanStats(snapshots: Snapshot[]): PlanStatistics {
   const plans: Record<string, number> = {};
   let totalAvailableCredits = 0;
   let totalMonthlyCredits = 0;
   const modelStats: Record<string, { totalRemainingFrac: number; count: number; exhaustedCount: number }> = {};
-
-  let highestAvgQuota = -1;
-  let bestEmail: string | undefined;
 
   for (const snap of snapshots) {
     const plan = snap.planType || 'Unknown';
@@ -96,9 +149,6 @@ export function calculatePlanStats(snapshots: Snapshot[]): PlanStatistics {
       totalMonthlyCredits += snap.promptCredits.monthly;
     }
 
-    let profileQuotaSum = 0;
-    let profileQuotaCount = 0;
-
     for (const m of snap.models) {
       const entry = modelStats[m.label] || { totalRemainingFrac: 0, count: 0, exhaustedCount: 0 };
       const frac = m.remainingPercentage ?? (m.isExhausted ? 0 : 1);
@@ -106,17 +156,10 @@ export function calculatePlanStats(snapshots: Snapshot[]): PlanStatistics {
       entry.count += 1;
       if (m.isExhausted) entry.exhaustedCount += 1;
       modelStats[m.label] = entry;
-
-      profileQuotaSum += frac;
-      profileQuotaCount += 1;
-    }
-
-    const avgQuota = profileQuotaCount > 0 ? profileQuotaSum / profileQuotaCount : 0;
-    if (avgQuota > highestAvgQuota) {
-      highestAvgQuota = avgQuota;
-      bestEmail = snap.email;
     }
   }
+
+  const best = findHealthiestProfile(snapshots);
 
   return {
     totalProfiles: snapshots.length,
@@ -124,7 +167,7 @@ export function calculatePlanStats(snapshots: Snapshot[]): PlanStatistics {
     totalAvailableCredits,
     totalMonthlyCredits,
     modelStats,
-    bestProfileForUse: bestEmail ? { email: bestEmail, avgQuotaPercentage: Math.round(highestAvgQuota * 100) } : undefined,
+    bestProfileForUse: best ? { email: best.email, avgQuotaPercentage: best.avgQuotaPercentage } : undefined,
   };
 }
 

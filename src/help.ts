@@ -28,6 +28,8 @@ ${bold('COMMANDS')}
   list                       List saved profiles and active one (aliases: ls, show, all)
   use <target>               Make a profile agy's active account (aliases: switch, select, set)
   run [target] [-- args]     Switch profile and launch agy CLI (aliases: start, exec, launch)
+  auto                       Auto-select and switch to the healthiest profile (aliases: best, pick)
+  autorun [-- args]          Auto-select healthiest profile and launch agy (aliases: auto-run)
   usage [target]             Show model quota (aliases: quota, credits, limits)
   update [--check]           Update agy CLI and check model lineup (aliases: upgrade, sync-models)
   status                     Show active profile and sync status (aliases: info, st, whoami)
@@ -35,13 +37,16 @@ ${bold('COMMANDS')}
   remove <target>            Delete a profile (aliases: rm, delete, del, unlink)
   doctor                     Check system health and diagnostics (aliases: check, health)
   stats                      Usage & subscription plan statistics across profiles (aliases: plan, statistics, metrics)
+  weekly [target]            Show weekly quota status and replenishment forecast (aliases: week, forecast, resets)
   spinner [seconds]          Show interactive loading spinner demo (aliases: spin, loading)
 
 ${USE_VS_RUN}
 ${bold('OPTIONS')}
-  --all               usage: every saved profile (the default; kept for habit)
+  --all               usage/weekly: every saved profile (the default; kept for habit)
+  --auto              use/run: automatically select the healthiest account
+  --weekly            usage: view weekly quota breakdown and reset forecast
   --check             update: only report model changes, do not update agy
-  --json              usage/list/status: machine-readable output
+  --json              usage/weekly/list/status: machine-readable output
   --label             adopt/login: a short name you can use as a target
   --clear             label: remove a profile's label
   --force             use/run/login: proceed even if agy appears to be running
@@ -130,6 +135,30 @@ ${bold('DESCRIPTION')}
   Everything after '--' is passed directly to agy.
 
 ${USE_VS_RUN}`,
+
+  auto: `${bold('agyp auto')} — Automatically select and switch to the healthiest profile
+
+${bold('USAGE')}
+  agyp auto [--force]
+  agyp best [--force]
+  agyp use --auto [--force]
+
+${bold('DESCRIPTION')}
+  Checks quotas across all saved profiles, ranks them by health (zero/minimal exhausted
+  models and highest remaining capacity), and activates the best profile.
+`,
+
+  autorun: `${bold('agyp autorun')} — Auto-select healthiest profile and launch agy
+
+${bold('USAGE')}
+  agyp autorun [--force] [--default-browser] [-- <agy args>]
+  agyp auto-run [--force] [--default-browser] [-- <agy args>]
+  agyp run --auto [--force] [--default-browser] [-- <agy args>]
+
+${bold('DESCRIPTION')}
+  Automatically selects and switches to the healthiest profile, then immediately launches
+  the agy CLI attached to your terminal.
+`,
 
   usage: `${bold('agyp usage')} — View model quota and prompt credits
 
@@ -223,6 +252,22 @@ ${bold('OPTIONS')}
   --reset    Clear cached usage statistics.
 `,
 
+  weekly: `${bold('agyp weekly')} — Show weekly quota status and replenishment forecast
+
+${bold('USAGE')}
+  agyp weekly [target] [--json]
+  agyp week [target] [--json]
+  agyp forecast [target] [--json]
+  agyp usage [target] --weekly [--json]
+
+${bold('DESCRIPTION')}
+  Analyzes model quotas for each profile and handle, identifying the earliest upcoming
+  quota reset and categorizing model pools into weekly/multi-day and rolling daily windows.
+
+${bold('OPTIONS')}
+  --json    Output machine-readable JSON format.
+`,
+
   spinner: `${bold('agyp spinner')} — Show interactive loading spinner demo
 
 ${bold('USAGE')}
@@ -234,3 +279,4 @@ ${bold('DESCRIPTION')}
   switching between random status messages every 3 seconds.
 `,
 };
+

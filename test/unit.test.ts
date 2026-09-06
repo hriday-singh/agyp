@@ -6,7 +6,7 @@ import { clearLive, finalFrame, isAgyBlob, liveTokenFilePath, parseBlob, readLiv
 import { chromePath, guestBrowserEnv } from '../src/browser.js';
 import { UserError, parseArgs } from '../src/args.js';
 import { catalogFromSnapshot, describeDiff, diffCatalog, isEmptyDiff } from '../src/catalog.js';
-import { matchModelToGroup, parseQuotaGroups, parseSnapshot, shouldShowModel } from '../src/google.js';
+import { CLOUDCODE, matchModelToGroup, parseQuotaGroups, parseSnapshot, shouldShowModel } from '../src/google.js';
 import { COMMAND_HELP, HELP } from '../src/help.js';
 import { validateLabel } from '../src/index.js';
 import { winTarget } from '../src/keyring.js';
@@ -345,6 +345,58 @@ describe('quota parsing', () => {
     expect(claude?.remainingPercentage).toBe(1);
     expect(claude?.resetTime).toBe('2026-09-06T17:00:00Z');
     expect(claude?.timeUntilResetMs).toBe(5 * 60 * 60 * 1000);
+  });
+
+  it('marks model as exhausted when 5-hour limit reaches 0 despite weekly remaining quota', () => {
+    const nowMs = Date.parse('2026-09-06T15:30:00Z');
+    const snapshot = parseSnapshot(
+      { paidTier: { name: 'Google AI Pro' } },
+      {
+        models: {
+          'gemini-3.1-pro-high': {
+            displayName: 'Gemini 3.1 Pro (High)',
+            quotaInfo: { remainingFraction: 1, resetTime: '2026-09-06T18:30:00Z' },
+          },
+        },
+      },
+      'bonka@gmail.com',
+      nowMs,
+      {
+        groups: [
+          {
+            displayName: 'Gemini Models',
+            description: 'Models within this group: Gemini Flash, Gemini Pro',
+            buckets: [
+              {
+                bucketId: 'gemini-weekly',
+                displayName: 'Weekly Limit Remaining',
+                window: 'weekly',
+                resetTime: '2026-09-13T13:30:00Z',
+                remainingFraction: 0.83,
+              },
+              {
+                bucketId: 'gemini-5h',
+                displayName: 'Five Hour Limit Remaining',
+                window: '5h',
+                resetTime: '2026-09-06T18:30:00Z',
+                remainingFraction: 0,
+              },
+            ],
+          },
+        ],
+      },
+    );
+
+    const model = snapshot.models.find((m) => m.label.includes('Gemini'));
+    expect(model).toBeDefined();
+    expect(model?.remainingPercentage).toBe(0);
+    expect(model?.isExhausted).toBe(true);
+    expect(model?.resetTime).toBe('2026-09-06T18:30:00Z');
+    expect(model?.timeUntilResetMs).toBe(3 * 60 * 60 * 1000);
+  });
+
+  it('defaults CLOUDCODE.baseUrl to daily-cloudcode-pa.googleapis.com', () => {
+    expect(CLOUDCODE.baseUrl).toBe('https://daily-cloudcode-pa.googleapis.com');
   });
 });
 

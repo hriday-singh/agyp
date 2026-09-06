@@ -196,13 +196,14 @@ Endpoints (Antigravity's own, discovered from the shipped CLI):
   public desktop OAuth client. A desktop client "secret" is not a secret; it
   ships in every copy. Override via `ANTIGRAVITY_OAUTH_CLIENT_ID` /
   `ANTIGRAVITY_OAUTH_CLIENT_SECRET` if Google rotates it.
-- `POST https://cloudcode-pa.googleapis.com/v1internal:loadCodeAssist` — tier and
-  project id. Header `User-Agent: antigravity` is required.
-- `POST https://cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels` —
+- `POST https://daily-cloudcode-pa.googleapis.com/v1internal:loadCodeAssist` — tier and
+  project id. Header `User-Agent: antigravity` is required. (Override via `ANTIGRAVITY_ENDPOINT`
+  or falls back to `cloudcode-pa.googleapis.com`).
+- `POST https://daily-cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels` —
   model catalog and lineup metadata. Note: Google returns static placeholder
   values (`remainingFraction: 1`, 5h resets) here now that quota is tracked in
   shared pools.
-- `POST https://cloudcode-pa.googleapis.com/v1internal:retrieveUserQuotaSummary` —
+- `POST https://daily-cloudcode-pa.googleapis.com/v1internal:retrieveUserQuotaSummary` —
   authoritative pooled quota groups (e.g., "Gemini Models", "Claude and GPT models")
   with multi-bucket windows ("weekly" and "5h") and live `remainingFraction`.
 

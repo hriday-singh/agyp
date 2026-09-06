@@ -19,7 +19,7 @@ export const OAUTH = {
 };
 
 export const CLOUDCODE = {
-  baseUrl: 'https://cloudcode-pa.googleapis.com',
+  baseUrl: process.env.ANTIGRAVITY_ENDPOINT || 'https://daily-cloudcode-pa.googleapis.com',
   userAgent: 'antigravity',
   metadata: { ideType: 'ANTIGRAVITY', platform: 'PLATFORM_UNSPECIFIED', pluginType: 'GEMINI' },
 };
@@ -101,17 +101,52 @@ export async function fetchEmail(accessToken: string): Promise<string> {
 }
 
 async function cloudCode(path: string, accessToken: string, body: unknown): Promise<Record<string, unknown>> {
-  const res = await fetch(`${CLOUDCODE.baseUrl}${path}`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      'Content-Type': 'application/json',
-      'User-Agent': CLOUDCODE.userAgent,
-    },
-    body: JSON.stringify(body),
-  });
-  if (!res.ok) throw new Error(`${path} failed: ${res.status} ${(await res.text()).slice(0, 200)}`);
-  return (await res.json()) as Record<string, unknown>;
+  const primaryUrl = CLOUDCODE.baseUrl;
+  const headers = {
+    Authorization: `Bearer ${accessToken}`,
+    'Content-Type': 'application/json',
+    'User-Agent': CLOUDCODE.userAgent,
+  };
+
+  try {
+    const res = await fetch(`${primaryUrl}${path}`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(body),
+    });
+    if (res.ok) {
+      return (await res.json()) as Record<string, unknown>;
+    }
+    if (primaryUrl.includes('daily-cloudcode-pa') && !process.env.ANTIGRAVITY_ENDPOINT) {
+      const fallbackUrl = 'https://cloudcode-pa.googleapis.com';
+      const fallbackRes = await fetch(`${fallbackUrl}${path}`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(body),
+      });
+      if (fallbackRes.ok) {
+        return (await fallbackRes.json()) as Record<string, unknown>;
+      }
+    }
+    throw new Error(`${path} failed: ${res.status} ${(await res.text()).slice(0, 200)}`);
+  } catch (err) {
+    if (primaryUrl.includes('daily-cloudcode-pa') && !process.env.ANTIGRAVITY_ENDPOINT) {
+      const fallbackUrl = 'https://cloudcode-pa.googleapis.com';
+      try {
+        const fallbackRes = await fetch(`${fallbackUrl}${path}`, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify(body),
+        });
+        if (fallbackRes.ok) {
+          return (await fallbackRes.json()) as Record<string, unknown>;
+        }
+      } catch {
+        // preserve original error below
+      }
+    }
+    throw err;
+  }
 }
 
 export function loadCodeAssist(accessToken: string) {

@@ -6,11 +6,11 @@ import { clearLive, finalFrame, isAgyBlob, liveTokenFilePath, parseBlob, readLiv
 import { chromePath, guestBrowserEnv } from '../src/browser.js';
 import { UserError, parseArgs } from '../src/args.js';
 import { catalogFromSnapshot, describeDiff, diffCatalog, isEmptyDiff } from '../src/catalog.js';
-import { parseSnapshot, shouldShowModel } from '../src/google.js';
+import { matchModelToGroup, parseQuotaGroups, parseSnapshot, shouldShowModel } from '../src/google.js';
 import { COMMAND_HELP, HELP } from '../src/help.js';
 import { validateLabel } from '../src/index.js';
 import { winTarget } from '../src/keyring.js';
-import { bar, humanDuration, renderWeeklyProfile, renderWeeklyReport, spinner } from '../src/render.js';
+import { bar, humanDuration, renderSnapshot, renderWeeklyProfile, renderWeeklyReport, spinner } from '../src/render.js';
 import { cmdSpinner, getRandomSpinnerText, SPINNER_TEXTS } from '../src/spinner.js';
 import { calculatePlanStats, clearUsageCache, findHealthiestProfile, loadUsageCache, rankProfileHealth, recordUsageSnapshot } from '../src/stats.js';
 import { COMMAND_ALIASES, findBestMatch, levenshtein } from '../src/suggest.js';
@@ -219,6 +219,133 @@ describe('quota parsing', () => {
     expect(snapshot.planType).toBe('free-tier');
     expect(snapshot.promptCredits).toBeUndefined();
   });
+
+  it('parses quota groups and buckets from retrieveUserQuotaSummary', () => {
+    const nowMs = Date.parse('2026-09-06T12:00:00Z');
+    const groups = parseQuotaGroups(
+      {
+        groups: [
+          {
+            displayName: 'Gemini Models',
+            description: 'Models within this group: Gemini Flash, Gemini Pro',
+            buckets: [
+              {
+                bucketId: 'gemini-weekly',
+                displayName: 'Weekly Limit Remaining',
+                window: 'weekly',
+                resetTime: '2026-09-08T12:00:00Z',
+                remainingFraction: 0.54,
+              },
+              {
+                bucketId: 'gemini-5h',
+                displayName: 'Five Hour Limit Remaining',
+                window: '5h',
+                resetTime: '2026-09-06T17:00:00Z',
+                remainingFraction: 1,
+              },
+            ],
+          },
+        ],
+      },
+      nowMs,
+    );
+
+    expect(groups).toBeDefined();
+    expect(groups).toHaveLength(1);
+    expect(groups![0]!.displayName).toBe('Gemini Models');
+    expect(groups![0]!.buckets).toHaveLength(2);
+    expect(groups![0]!.buckets[0]!.remainingFraction).toBe(0.54);
+    expect(groups![0]!.buckets[0]!.timeUntilResetMs).toBe(2 * 24 * 60 * 60 * 1000);
+    expect(groups![0]!.buckets[1]!.timeUntilResetMs).toBe(5 * 60 * 60 * 1000);
+  });
+
+  it('matches models to groups by model family and keywords', () => {
+    const groups = [
+      { displayName: 'Gemini Models', description: 'Models within this group: Gemini Flash, Gemini Pro', buckets: [] },
+      { displayName: 'Claude and GPT models', description: 'Models within this group: Claude Opus, Claude Sonnet, GPT-OSS', buckets: [] },
+    ];
+
+    expect(matchModelToGroup('gemini-3.1-pro-high', 'Gemini 3.1 Pro (High)', groups)?.displayName).toBe('Gemini Models');
+    expect(matchModelToGroup('claude-sonnet-4-6', 'Claude Sonnet 4.6 (Thinking)', groups)?.displayName).toBe('Claude and GPT models');
+    expect(matchModelToGroup('gpt-oss-120b-medium', 'GPT-OSS 120B (Medium)', groups)?.displayName).toBe('Claude and GPT models');
+  });
+
+  it('integrates quota summary into snapshot, reflecting true used weekly quota', () => {
+    const nowMs = Date.parse('2026-09-06T12:00:00Z');
+    const snapshot = parseSnapshot(
+      { paidTier: { name: 'Google AI Pro' } },
+      {
+        models: {
+          'gemini-3.1-pro-high': {
+            displayName: 'Gemini 3.1 Pro (High)',
+            quotaInfo: { remainingFraction: 1, resetTime: '2026-09-06T17:00:00Z' },
+          },
+          'claude-opus-4-6-thinking': {
+            displayName: 'Claude Opus 4.6 (Thinking)',
+            quotaInfo: { remainingFraction: 1, resetTime: '2026-09-06T17:00:00Z' },
+          },
+        },
+      },
+      'brawl@gmail.com',
+      nowMs,
+      {
+        groups: [
+          {
+            displayName: 'Gemini Models',
+            description: 'Models within this group: Gemini Flash, Gemini Pro',
+            buckets: [
+              {
+                bucketId: 'gemini-weekly',
+                displayName: 'Weekly Limit Remaining',
+                window: 'weekly',
+                resetTime: '2026-09-08T12:00:00Z',
+                remainingFraction: 0.54,
+              },
+              {
+                bucketId: 'gemini-5h',
+                displayName: 'Five Hour Limit Remaining',
+                window: '5h',
+                resetTime: '2026-09-06T17:00:00Z',
+                remainingFraction: 1,
+              },
+            ],
+          },
+          {
+            displayName: 'Claude and GPT models',
+            description: 'Models within this group: Claude Opus, Claude Sonnet, GPT-OSS',
+            buckets: [
+              {
+                bucketId: '3p-weekly',
+                displayName: 'Weekly Limit Remaining',
+                window: 'weekly',
+                resetTime: '2026-09-13T12:00:00Z',
+                remainingFraction: 1,
+              },
+              {
+                bucketId: '3p-5h',
+                displayName: 'Five Hour Limit Remaining',
+                window: '5h',
+                resetTime: '2026-09-06T17:00:00Z',
+                remainingFraction: 1,
+              },
+            ],
+          },
+        ],
+      },
+    );
+
+    expect(snapshot.quotaGroups).toHaveLength(2);
+    const gemini = snapshot.models.find((m) => m.label.includes('Gemini'));
+    expect(gemini?.remainingPercentage).toBe(0.54);
+    expect(gemini?.resetTime).toBe('2026-09-08T12:00:00Z');
+    expect(gemini?.timeUntilResetMs).toBe(2 * 24 * 60 * 60 * 1000);
+    expect(gemini?.isExhausted).toBe(false);
+
+    const claude = snapshot.models.find((m) => m.label.includes('Claude'));
+    expect(claude?.remainingPercentage).toBe(1);
+    expect(claude?.resetTime).toBe('2026-09-06T17:00:00Z');
+    expect(claude?.timeUntilResetMs).toBe(5 * 60 * 60 * 1000);
+  });
 });
 
 describe('render helpers', () => {
@@ -234,6 +361,57 @@ describe('render helpers', () => {
     expect(strip(bar(0.5, 10))).toBe('█████░░░░░');
     expect(strip(bar(-1, 4))).toBe('░░░░');
     expect(strip(bar(2, 4))).toBe('████');
+  });
+
+  it('renders snapshot with quota groups and buckets', () => {
+    const snapshot = {
+      email: 'user@gmail.com',
+      planType: 'Google AI Pro',
+      models: [
+        { label: 'Gemini 3.1 Pro', modelIds: ['gemini-3.1-pro'], remainingPercentage: 0.54, isExhausted: false, groupName: 'Gemini Models' },
+      ],
+      quotaGroups: [
+        {
+          displayName: 'Gemini Models',
+          description: 'Models within this group: Gemini Flash, Gemini Pro',
+          buckets: [
+            {
+              bucketId: 'gemini-weekly',
+              displayName: 'Weekly Limit Remaining',
+              window: 'weekly',
+              remainingFraction: 0.54,
+              timeUntilResetMs: 28 * 3600 * 1000,
+            },
+            {
+              bucketId: 'gemini-5h',
+              displayName: 'Five Hour Limit Remaining',
+              window: '5h',
+              remainingFraction: 1,
+              timeUntilResetMs: 2 * 3600 * 1000,
+            },
+          ],
+        },
+      ],
+    };
+
+    const rendered = renderSnapshot(snapshot);
+    expect(rendered).toContain('user@gmail.com');
+    expect(rendered).toContain('Google AI Pro');
+    expect(rendered).toContain('Gemini Models');
+    expect(rendered).toContain('Weekly Limit Remaining');
+    expect(rendered).toContain('54%');
+    expect(rendered).toContain('resets in 1d 4h');
+    expect(rendered).toContain('Five Hour Limit Remaining');
+    expect(rendered).toContain('100%');
+    expect(rendered).toContain('resets in 2h');
+
+    // Without showModels, individual group models are not repeated
+    expect(rendered).not.toContain('Models:');
+
+    // With showModels, models are listed
+    const withModels = renderSnapshot(snapshot, true);
+    expect(withModels).toContain('Models:');
+    expect(withModels).toContain('Gemini 3.1 Pro');
   });
 });
 

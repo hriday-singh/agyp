@@ -380,7 +380,7 @@ async function cmdAutoRun(
   process.exit(code);
 }
 
-async function cmdUsage(target: string | undefined, json: boolean): Promise<void> {
+async function cmdUsage(target: string | undefined, json: boolean, showModels = false): Promise<void> {
   let index = loadIndex();
   if (index.profiles.length === 0) throw new UserError('no profiles yet — run `agyp adopt` or `agyp login`');
 
@@ -408,7 +408,7 @@ async function cmdUsage(target: string | undefined, json: boolean): Promise<void
     }
     const changed = trackCatalog(result.value.snapshot);
     if (!json) {
-      console.log(renderSnapshot(result.value.snapshot) + '\n');
+      console.log(renderSnapshot(result.value.snapshot, showModels) + '\n');
       if (changed) {
         info(`  model lineup changed since the last check — \`agyp update --check\` for details\n`);
       }
@@ -656,7 +656,7 @@ async function main(): Promise<void> {
       return;
     case 'usage':
       if (flags.has('weekly')) return cmdWeekly(flags.has('all') ? undefined : target, json, snapshotFor);
-      return cmdUsage(flags.has('all') ? undefined : target, json);
+      return cmdUsage(flags.has('all') ? undefined : target, json, flags.has('models'));
     case 'weekly':
       return cmdWeekly(flags.has('all') ? undefined : target, json, snapshotFor);
     case 'update':

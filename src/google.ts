@@ -36,6 +36,23 @@ export interface ModelQuota {
   isExhausted: boolean;
   resetTime?: string;
   timeUntilResetMs?: number;
+  groupName?: string;
+}
+
+export interface QuotaBucket {
+  bucketId: string;
+  displayName: string;
+  window?: string;
+  remainingFraction?: number;
+  resetTime?: string;
+  timeUntilResetMs?: number;
+  description?: string;
+}
+
+export interface QuotaGroup {
+  displayName: string;
+  description?: string;
+  buckets: QuotaBucket[];
 }
 
 export interface PromptCredits {
@@ -49,6 +66,7 @@ export interface Snapshot {
   planType?: string;
   promptCredits?: PromptCredits;
   models: ModelQuota[];
+  quotaGroups?: QuotaGroup[];
 }
 
 export async function refreshAccessToken(refreshToken: string): Promise<string> {
@@ -104,6 +122,10 @@ export function fetchAvailableModels(accessToken: string, projectId?: string) {
   return cloudCode('/v1internal:fetchAvailableModels', accessToken, projectId ? { project: projectId } : {});
 }
 
+export function retrieveUserQuotaSummary(accessToken: string, projectId?: string) {
+  return cloudCode('/v1internal:retrieveUserQuotaSummary', accessToken, projectId ? { project: projectId } : {});
+}
+
 export function extractProjectId(loadResponse: Record<string, unknown>): string | undefined {
   const value = loadResponse['cloudaicompanionProject'];
   if (typeof value === 'string' && value.length > 0) return value;
@@ -124,6 +146,74 @@ export function shouldShowModel(modelId: string, model: { quotaInfo?: unknown; d
   return Boolean(model.quotaInfo) && Boolean(model.displayName);
 }
 
+export function parseQuotaGroups(
+  quotaSummaryResponse?: Record<string, unknown>,
+  now = Date.now(),
+): QuotaGroup[] | undefined {
+  if (!quotaSummaryResponse || !Array.isArray(quotaSummaryResponse['groups'])) return undefined;
+
+  const rawGroups = quotaSummaryResponse['groups'] as Array<Record<string, unknown>>;
+  const groups: QuotaGroup[] = [];
+
+  for (const rawG of rawGroups) {
+    const displayName = typeof rawG['displayName'] === 'string' ? rawG['displayName'] : 'Quota Group';
+    const description = typeof rawG['description'] === 'string' ? rawG['description'] : undefined;
+    const rawBuckets = Array.isArray(rawG['buckets']) ? (rawG['buckets'] as Array<Record<string, unknown>>) : [];
+    const buckets: QuotaBucket[] = [];
+
+    for (const rawB of rawBuckets) {
+      const bucketId = typeof rawB['bucketId'] === 'string' ? rawB['bucketId'] : 'quota-bucket';
+      const bDisplayName = typeof rawB['displayName'] === 'string' ? rawB['displayName'] : bucketId;
+      const window = typeof rawB['window'] === 'string' ? rawB['window'] : undefined;
+      const resetTime = typeof rawB['resetTime'] === 'string' ? rawB['resetTime'] : undefined;
+      const resetMs = resetTime ? new Date(resetTime).getTime() - now : NaN;
+      const remainingFraction = typeof rawB['remainingFraction'] === 'number' ? rawB['remainingFraction'] : 1;
+      const desc = typeof rawB['description'] === 'string' ? rawB['description'] : undefined;
+
+      buckets.push({
+        bucketId,
+        displayName: bDisplayName,
+        window,
+        remainingFraction,
+        resetTime,
+        timeUntilResetMs: Number.isFinite(resetMs) && resetMs > 0 ? resetMs : undefined,
+        description: desc,
+      });
+    }
+
+    groups.push({ displayName, description, buckets });
+  }
+
+  return groups.length > 0 ? groups : undefined;
+}
+
+export function matchModelToGroup(modelId: string, label: string, groups: QuotaGroup[]): QuotaGroup | undefined {
+  const mid = modelId.toLowerCase();
+  const lbl = label.toLowerCase();
+
+  for (const group of groups) {
+    const gName = group.displayName.toLowerCase();
+    const gDesc = (group.description || '').toLowerCase();
+
+    if (gName.includes('gemini') || gDesc.includes('gemini')) {
+      if (mid.includes('gemini') || lbl.includes('gemini')) return group;
+    }
+    if (gName.includes('claude') || gDesc.includes('claude') || gName.includes('gpt') || gDesc.includes('gpt')) {
+      if (mid.includes('claude') || lbl.includes('claude') || mid.includes('gpt') || lbl.includes('gpt')) return group;
+    }
+  }
+
+  for (const group of groups) {
+    const text = (group.displayName + ' ' + (group.description || '')).toLowerCase();
+    const words = text.split(/[\s,:\(\)]+/).filter((w) => w.length > 3 && !['models', 'within', 'this', 'group'].includes(w));
+    for (const w of words) {
+      if (mid.includes(w) || lbl.includes(w)) return group;
+    }
+  }
+
+  return undefined;
+}
+
 interface RawModel {
   displayName?: string;
   label?: string;
@@ -135,10 +225,9 @@ export function parseSnapshot(
   modelsResponse: Record<string, unknown>,
   email: string,
   now = Date.now(),
+  quotaSummaryResponse?: Record<string, unknown>,
 ): Snapshot {
-  // Several model ids map to one display name and share one quota pool
-  // (e.g. gemini-2.5-flash, gemini-3.1-flash-lite -> "Gemini 3.1 Flash Lite").
-  // Listing them separately would look like separate budgets.
+  const quotaGroups = parseQuotaGroups(quotaSummaryResponse, now);
   const grouped = new Map<string, ModelQuota>();
   const raw = (modelsResponse['models'] ?? {}) as Record<string, RawModel>;
 
@@ -147,26 +236,51 @@ export function parseSnapshot(
     const quota = model.quotaInfo;
     const label = model.displayName || model.label || modelId;
     const existing = grouped.get(label);
-    const resetTime = earliest(existing?.resetTime, quota?.resetTime);
-    const resetMs = resetTime ? new Date(resetTime).getTime() - now : NaN;
+
+    const matchedGroup = quotaGroups ? matchModelToGroup(modelId, label, quotaGroups) : undefined;
+    let remainingFraction = quota?.remainingFraction;
+    let resetTime = quota?.resetTime;
+    let isExhausted = Boolean(quota?.isExhausted || quota?.remainingFraction === 0);
+
+    if (matchedGroup && matchedGroup.buckets.length > 0) {
+      const minBucket = matchedGroup.buckets.reduce(
+        (min, b) => ((b.remainingFraction ?? 1) < (min.remainingFraction ?? 1) ? b : min),
+        matchedGroup.buckets[0]!,
+      );
+      remainingFraction = minBucket.remainingFraction;
+      if ((minBucket.remainingFraction ?? 1) < 1) {
+        resetTime = minBucket.resetTime;
+      } else {
+        const futureBuckets = matchedGroup.buckets.filter((b) => b.timeUntilResetMs !== undefined);
+        if (futureBuckets.length > 0) {
+          futureBuckets.sort((a, b) => (a.timeUntilResetMs ?? 0) - (b.timeUntilResetMs ?? 0));
+          resetTime = futureBuckets[0]!.resetTime;
+        }
+      }
+      isExhausted = matchedGroup.buckets.some((b) => b.remainingFraction !== undefined && b.remainingFraction <= 0);
+    }
+
+    const mergedResetTime = earliest(existing?.resetTime, resetTime);
+    const resetMs = mergedResetTime ? new Date(mergedResetTime).getTime() - now : NaN;
+    const finalFrac =
+      remainingFraction !== undefined && existing?.remainingPercentage !== undefined
+        ? Math.min(remainingFraction, existing.remainingPercentage)
+        : (remainingFraction ?? existing?.remainingPercentage);
 
     grouped.set(label, {
       label,
       modelIds: [...(existing?.modelIds ?? []), modelId],
-      remainingPercentage: existing?.remainingPercentage ?? quota?.remainingFraction,
-      isExhausted: (existing?.isExhausted ?? false) || (quota?.isExhausted ?? quota?.remainingFraction === 0),
-      resetTime,
+      remainingPercentage: finalFrac,
+      isExhausted: (existing?.isExhausted ?? false) || isExhausted,
+      resetTime: mergedResetTime,
       timeUntilResetMs: Number.isFinite(resetMs) && resetMs > 0 ? resetMs : undefined,
+      groupName: matchedGroup?.displayName ?? existing?.groupName,
     });
   }
 
   const models = [...grouped.values()].sort((a, b) => a.label.localeCompare(b.label));
 
   const planInfo = loadResponse['planInfo'] as { planType?: string; monthlyPromptCredits?: number } | undefined;
-  // The subscription lives in `paidTier` ({id: "g1-pro-tier", name: "Google AI
-  // Pro"}). `currentTier` is the Code Assist licensing tier and reads
-  // {id: "free-tier", name: "Antigravity"} even on a paid account — showing that
-  // labels every Pro user as free, so paidTier wins.
   const paidTier = loadResponse['paidTier'] as { id?: string; name?: string } | undefined;
   const currentTier = loadResponse['currentTier'] as { id?: string; name?: string } | undefined;
   const available = loadResponse['availablePromptCredits'] as number | undefined;
@@ -181,6 +295,7 @@ export function parseSnapshot(
     planType: paidTier?.name ?? planInfo?.planType ?? currentTier?.name ?? currentTier?.id,
     promptCredits,
     models,
+    quotaGroups,
   };
 }
 
@@ -199,6 +314,12 @@ export async function fetchQuota(
   const accessToken = await refreshAccessToken(refreshToken);
   const loadResponse = await loadCodeAssist(accessToken);
   const projectId = cachedProjectId ?? extractProjectId(loadResponse);
-  const modelsResponse = await fetchAvailableModels(accessToken, projectId);
-  return { snapshot: parseSnapshot(loadResponse, modelsResponse, email), projectId };
+  const [modelsResponse, quotaSummaryResponse] = await Promise.all([
+    fetchAvailableModels(accessToken, projectId),
+    retrieveUserQuotaSummary(accessToken, projectId).catch(() => undefined),
+  ]);
+  return {
+    snapshot: parseSnapshot(loadResponse, modelsResponse, email, Date.now(), quotaSummaryResponse),
+    projectId,
+  };
 }

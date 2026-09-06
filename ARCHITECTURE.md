@@ -199,7 +199,12 @@ Endpoints (Antigravity's own, discovered from the shipped CLI):
 - `POST https://cloudcode-pa.googleapis.com/v1internal:loadCodeAssist` — tier and
   project id. Header `User-Agent: antigravity` is required.
 - `POST https://cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels` —
-  per-model `quotaInfo`.
+  model catalog and lineup metadata. Note: Google returns static placeholder
+  values (`remainingFraction: 1`, 5h resets) here now that quota is tracked in
+  shared pools.
+- `POST https://cloudcode-pa.googleapis.com/v1internal:retrieveUserQuotaSummary` —
+  authoritative pooled quota groups (e.g., "Gemini Models", "Claude and GPT models")
+  with multi-bucket windows ("weekly" and "5h") and live `remainingFraction`.
 
 Because this only needs a refresh token, `agyp usage` reads every account in
 parallel without touching the live credential — which is why "all profiles" is the
@@ -207,16 +212,21 @@ default and a target is the narrowing case, not the other way round. Failures ar
 per-account (`Promise.allSettled`): one expired refresh token prints its error on
 that account's line and the rest still render.
 
-Two response quirks, both handled in `parseSnapshot`:
+Quota resolution and grouping in `parseSnapshot`:
 
+- **Quota is pooled by groups and windows.** Google groups models into shared pools
+  (Gemini models share a weekly and 5-hour limit bucket; Claude and GPT models share
+  a 3P weekly and 5-hour bucket). The authoritative capacity is the binding minimum
+  across active buckets.
+- **`agyp usage` renders quota groups directly**, showing both weekly and 5-hour
+  capacities and reset countdowns. Passing `--models` renders the detailed per-model
+  breakdown mapped to these pools.
 - **Several model ids share one display name and one quota pool** (for example
   `gemini-2.5-flash`, `gemini-2.5-flash-thinking` and `gemini-3.1-flash-lite` are
   all "Gemini 3.1 Flash Lite"). They are grouped into one row, keeping the
   earliest reset time — showing them separately reads as separate budgets.
-- **`quotaInfo.remainingFraction` is often absent**, including for untouched
-  pools. Absent is not "100%": internal `tab_*` models report `1` explicitly. So
-  it renders as `n/a`, with the reset timer still shown. The reference
-  `antigravity-usage` tool shows N/A in the same conditions.
+- **`quotaInfo.remainingFraction` is honest.** If Google omits the remaining-fraction
+  field, it renders as `n/a` instead of guessing 100%.
 
 These are undocumented internal endpoints. If quota ever returns nonsense, dump a
 raw response first — the shape has changed before.

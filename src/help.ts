@@ -45,6 +45,7 @@ ${bold('OPTIONS')}
   --all               usage/weekly: every saved profile (the default; kept for habit)
   --auto              use/run: automatically select the healthiest account
   --weekly            usage: view weekly quota breakdown and reset forecast
+  --models            usage: display detailed per-model breakdown
   --check             update: only report model changes, do not update agy
   --json              usage/weekly/list/status: machine-readable output
   --label             adopt/login: a short name you can use as a target
@@ -172,6 +173,7 @@ ${bold('DESCRIPTION')}
 
 ${bold('OPTIONS')}
   --all     Query all saved profiles (default behavior).
+  --models  Display detailed per-model breakdown alongside groups.
   --json    Output machine-readable JSON snapshot format.
 `,
 

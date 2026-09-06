@@ -13,9 +13,14 @@ $ agyp list
 
 $ agyp usage
 you@gmail.com (Google AI Pro)
-  Claude Opus 4.6 (Thinking)   ████████████████░░░░   79%  resets in 3h 51m
-  Gemini 3.1 Pro (High)        ────────────────────    n/a  resets in 1d 11h
+  Gemini Models
+    Weekly Limit               ████████████████░░░░   79%  resets in 1d 11h
+    5-Hour Limit               ████████████████████  100%  resets in 4h 32m
+  Claude and GPT models
+    Weekly Limit               ████████████████████  100%  resets in 6d 02h
+    5-Hour Limit               ████████████████████  100%  resets in 5h 00m
 ...
+(pass --models to view individual models mapped to pools)
 ```
 
 ## Install
@@ -92,8 +97,9 @@ A **target** is an email, a list number, a label, or an unambiguous email prefix
 `agyp use 2`, `agyp use work`, and `agyp use you.work@gmail.com` are the same thing.
 Labels cannot be numbers only (e.g. `"123"` is rejected because numbers resolve to list positions).
 
-`--json` works on `list`, `usage`, and `status`. `--all` on `usage` still works; it
-is now the default.
+`--json` works on `list`, `usage`, `weekly`, and `status`. `--all` on `usage` still works; it
+is now the default. Pass `--models` to `usage` to show the full per-model breakdown
+mapped to their quota pools. Pass `--weekly` to jump directly to weekly forecasts.
 
 ## Things worth knowing
 

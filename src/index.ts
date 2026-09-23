@@ -432,6 +432,19 @@ async function cmdUpdate(checkOnly: boolean, force: boolean): Promise<void> {
       throw new UserError('agy is running — close it before updating, or pass --force');
     }
     const before = agy.agyVersion();
+    if (agy.agyUpdating()) {
+      // ponytail: fixed 1s poll, 5 min ceiling — agy exposes no progress to hook into
+      const stopWait = spinner('agy is already updating itself in the background — waiting');
+      const deadline = Date.now() + 5 * 60_000;
+      try {
+        while (agy.agyUpdating()) {
+          if (Date.now() > deadline) throw new UserError('agy background update still running after 5 min — try again later');
+          await new Promise((r) => setTimeout(r, 1000));
+        }
+      } finally {
+        stopWait();
+      }
+    }
     const stopUpdate = spinner(`updating agy ${before ?? ''}`.trimEnd());
     const { code, output } = await agy
       .runAgyQuiet(['update'], (line) => stopUpdate.log(dim(line)))

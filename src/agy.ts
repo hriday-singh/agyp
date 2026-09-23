@@ -116,15 +116,42 @@ export function clearLive(): void {
  * while it runs.
  */
 export function agyRunning(): boolean {
+  return agyProcesses().some((cmd) => !isBgUpdater(cmd));
+}
+
+/**
+ * agy downloads and swaps in new versions from a detached `--bg-updater` child.
+ * It holds no token, so it must not block switching — but it does hold agy's
+ * update lock, so `agy update` fails with "update already in progress" until it exits.
+ */
+export function agyUpdating(): boolean {
+  return agyProcesses().some(isBgUpdater);
+}
+
+export function isBgUpdater(commandLine: string): boolean {
+  return /\s--bg-updater\b/.test(commandLine);
+}
+
+/** Command lines of every running agy process. */
+function agyProcesses(): string[] {
   if (process.platform === 'win32') {
-    const r = spawnSync('tasklist', ['/FI', 'IMAGENAME eq agy.exe', '/NH'], {
-      encoding: 'utf8',
-      windowsHide: true,
-    });
-    return r.status === 0 && /agy\.exe/i.test(r.stdout);
+    const r = spawnSync(
+      'powershell',
+      ['-NoProfile', '-NonInteractive', '-Command', `Get-CimInstance Win32_Process -Filter "Name='agy.exe'" | ForEach-Object CommandLine`],
+      { encoding: 'utf8', windowsHide: true },
+    );
+    return r.status === 0 ? r.stdout.split(/\r?\n/).filter((l) => l.trim()) : [];
   }
-  const r = spawnSync('pgrep', ['-x', 'agy'], { encoding: 'utf8' });
-  return r.status === 0 && r.stdout.trim().length > 0;
+  const r = spawnSync('ps', ['-Ao', 'args='], { encoding: 'utf8' });
+  return r.status === 0 ? agyCommandLines(r.stdout) : [];
+}
+
+/** Lines of `ps -o args` output whose executable is agy. */
+export function agyCommandLines(psOutput: string): string[] {
+  return psOutput
+    .split('\n')
+    .map((l) => l.trim())
+    .filter((l) => /^(\S*\/)?agy(\s|$)/.test(l));
 }
 
 export function agyPath(): string | null {
@@ -139,7 +166,6 @@ export function agyVersion(): string | null {
   const r = spawnSync('agy', ['--version'], {
     encoding: 'utf8',
     windowsHide: true,
-    shell: process.platform === 'win32',
   });
   const first = `${r.stdout ?? ''}${r.stderr ?? ''}`.trim().split(/\r?\n/)[0]?.trim() ?? '';
   return /^\d+\.\d+/.test(first) ? first : null;
@@ -168,7 +194,7 @@ export function runAgyQuiet(
   onLine?: (line: string) => void,
 ): Promise<{ code: number; output: string }> {
   return new Promise((resolve, reject) => {
-    const child = spawn('agy', args, { shell: process.platform === 'win32', windowsHide: true });
+    const child = spawn('agy', args, { windowsHide: true });
     let output = '';
     let buffer = '';
 
@@ -196,7 +222,7 @@ export function runAgyQuiet(
 
 /** Run `agy` attached to this terminal. Returns its exit code. */
 export function launchAgy(args: string[], env?: NodeJS.ProcessEnv): number {
-  const r = spawnSync('agy', args, { stdio: 'inherit', shell: process.platform === 'win32', env });
+  const r = spawnSync('agy', args, { stdio: 'inherit', env });
   if (r.error) throw new Error(`could not launch agy: ${r.error.message}`);
   return r.status ?? 0;
 }

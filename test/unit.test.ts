@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node
 import { tmpdir } from 'node:os';
 import { delimiter, join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { clearLive, finalFrame, isAgyBlob, liveTokenFilePath, parseBlob, readLiveRaw, writeLive } from '../src/agy.js';
+import { agyCommandLines, clearLive, finalFrame, isAgyBlob, isBgUpdater, liveTokenFilePath, parseBlob, readLiveRaw, writeLive } from '../src/agy.js';
 import { chromePath, guestBrowserEnv } from '../src/browser.js';
 import { UserError, parseArgs } from '../src/args.js';
 import { catalogFromSnapshot, describeDiff, diffCatalog, isEmptyDiff } from '../src/catalog.js';
@@ -10,7 +10,7 @@ import { CLOUDCODE, matchModelToGroup, parseQuotaGroups, parseSnapshot, shouldSh
 import { COMMAND_HELP, HELP } from '../src/help.js';
 import { validateLabel } from '../src/index.js';
 import { winTarget } from '../src/keyring.js';
-import { bar, humanDuration, renderSnapshot, renderWeeklyProfile, renderWeeklyReport, spinner } from '../src/render.js';
+import { bar, humanDuration, renderSnapshot, renderWeeklyProfile, renderWeeklyReport, resetLabel, spinner } from '../src/render.js';
 import { cmdSpinner, getRandomSpinnerText, SPINNER_TEXTS } from '../src/spinner.js';
 import { calculatePlanStats, clearUsageCache, findHealthiestProfile, loadUsageCache, rankProfileHealth, recordUsageSnapshot } from '../src/stats.js';
 import { COMMAND_ALIASES, findBestMatch, levenshtein } from '../src/suggest.js';
@@ -438,7 +438,7 @@ describe('render helpers', () => {
               bucketId: 'gemini-5h',
               displayName: 'Five Hour Limit Remaining',
               window: '5h',
-              remainingFraction: 1,
+              remainingFraction: 0.9,
               timeUntilResetMs: 2 * 3600 * 1000,
             },
           ],
@@ -454,7 +454,7 @@ describe('render helpers', () => {
     expect(rendered).toContain('54%');
     expect(rendered).toContain('resets in 1d 4h');
     expect(rendered).toContain('Five Hour Limit Remaining');
-    expect(rendered).toContain('100%');
+    expect(rendered).toContain('90%');
     expect(rendered).toContain('resets in 2h');
 
     // Without showModels, individual group models are not repeated
@@ -671,6 +671,26 @@ describe('finalFrame', () => {
     );
     expect(finalFrame('already up to date')).toBe('already up to date');
     expect(finalFrame('\r   \r  ')).toBe('');
+  });
+});
+
+describe('resetLabel', () => {
+  it('hides the rolling countdown on a full bucket', () => {
+    expect(resetLabel(1, 5 * 3600_000)).toBe('');
+    expect(resetLabel(0.72, 3600_000)).toContain('resets in');
+    expect(resetLabel(0.5, undefined)).toBe('');
+  });
+});
+
+describe('agy process detection', () => {
+  it('treats the background updater as not running', () => {
+    expect(isBgUpdater('C:\\Users\\me\\AppData\\Local\\agy\\bin\\agy.EXE --bg-updater --app_data_dir=antigravity-cli')).toBe(true);
+    expect(isBgUpdater('"C:\\agy\\agy.EXE" --continue')).toBe(false);
+  });
+
+  it('picks only agy executables out of ps output', () => {
+    const ps = ['/usr/bin/bash', '/home/me/.local/bin/agy --bg-updater', 'agy', 'node agyp.js', 'vim agy.ts', ''].join('\n');
+    expect(agyCommandLines(ps)).toEqual(['/home/me/.local/bin/agy --bg-updater', 'agy']);
   });
 });
 

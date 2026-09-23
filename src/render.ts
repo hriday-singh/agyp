@@ -69,6 +69,15 @@ export function spinner(text: string): SpinnerController {
   return stop;
 }
 
+/**
+ * A full bucket's resetTime is just "now + window" — the window only starts on
+ * first use — so a countdown there is noise that never gets closer.
+ */
+export function resetLabel(fraction: number | undefined, ms: number | undefined): string {
+  if (!ms || (fraction !== undefined && fraction >= 1)) return '';
+  return dim(`resets in ${humanDuration(ms)}`);
+}
+
 export function humanDuration(ms: number): string {
   if (ms <= 0) return 'now';
   const minutes = Math.floor(ms / 60_000);
@@ -104,7 +113,7 @@ export function renderSnapshot(snapshot: Snapshot, showModels = false): string {
         const fraction = bucket.remainingFraction;
         const gauge = fraction === undefined ? dim('─'.repeat(20)) : bar(fraction);
         const pct = fraction === undefined ? dim('   n/a') : `${(fraction * 100).toFixed(0).padStart(4)}%`;
-        const reset = bucket.timeUntilResetMs ? dim(`resets in ${humanDuration(bucket.timeUntilResetMs)}`) : '';
+        const reset = resetLabel(fraction, bucket.timeUntilResetMs);
         const flag = bucket.remainingFraction !== undefined && bucket.remainingFraction <= 0 ? red(' EXHAUSTED') : '';
         const name = bucket.displayName.length > 30 ? bucket.displayName.slice(0, 29) + '…' : bucket.displayName;
         lines.push(`    ${name.padEnd(32)} ${gauge} ${pct}  ${reset}${flag}`);
@@ -122,7 +131,7 @@ export function renderSnapshot(snapshot: Snapshot, showModels = false): string {
         const fraction = model.remainingPercentage;
         const gauge = fraction === undefined ? dim('─'.repeat(20)) : bar(fraction);
         const pct = fraction === undefined ? dim('   n/a') : `${(fraction * 100).toFixed(0).padStart(4)}%`;
-        const reset = model.timeUntilResetMs ? dim(`resets in ${humanDuration(model.timeUntilResetMs)}`) : '';
+        const reset = resetLabel(fraction, model.timeUntilResetMs);
         const flag = model.isExhausted ? red(' EXHAUSTED') : '';
         lines.push(`    ${name.padEnd(32)} ${gauge} ${pct}  ${reset}${flag}`);
       }
@@ -135,7 +144,7 @@ export function renderSnapshot(snapshot: Snapshot, showModels = false): string {
         const fraction = model.remainingPercentage;
         const gauge = fraction === undefined ? dim('─'.repeat(20)) : bar(fraction);
         const pct = fraction === undefined ? dim('   n/a') : `${(fraction * 100).toFixed(0).padStart(4)}%`;
-        const reset = model.timeUntilResetMs ? dim(`resets in ${humanDuration(model.timeUntilResetMs)}`) : '';
+        const reset = resetLabel(fraction, model.timeUntilResetMs);
         const flag = model.isExhausted ? red(' EXHAUSTED') : '';
         lines.push(`    ${name.padEnd(32)} ${gauge} ${pct}  ${reset}${flag}`);
       }
@@ -153,7 +162,7 @@ export function renderSnapshot(snapshot: Snapshot, showModels = false): string {
     const fraction = model.remainingPercentage;
     const gauge = fraction === undefined ? dim('─'.repeat(20)) : bar(fraction);
     const pct = fraction === undefined ? dim('   n/a') : `${(fraction * 100).toFixed(0).padStart(4)}%`;
-    const reset = model.timeUntilResetMs ? dim(`resets in ${humanDuration(model.timeUntilResetMs)}`) : '';
+    const reset = resetLabel(fraction, model.timeUntilResetMs);
     const flag = model.isExhausted ? red(' EXHAUSTED') : '';
     lines.push(`  ${name.padEnd(34)} ${gauge} ${pct}  ${reset}${flag}`);
   }
@@ -181,7 +190,7 @@ export function renderWeeklyProfile(report: ProfileWeeklyReport): string {
     const fraction = model.remainingPercentage;
     const gauge = fraction === undefined ? dim('─'.repeat(20)) : bar(fraction);
     const pct = fraction === undefined ? dim('   n/a') : `${(fraction * 100).toFixed(0).padStart(4)}%`;
-    const reset = model.timeUntilResetMs ? dim(`resets in ${humanDuration(model.timeUntilResetMs)}`) : '';
+    const reset = resetLabel(fraction, model.timeUntilResetMs);
     const flag = model.isExhausted ? red(' EXHAUSTED') : '';
     return `${indent}${name.padEnd(32)} ${gauge} ${pct}  ${reset}${flag}`;
   };

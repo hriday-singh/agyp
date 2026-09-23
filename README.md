@@ -14,11 +14,13 @@ $ agyp list
 $ agyp usage
 you@gmail.com (Google AI Pro)
   Gemini Models
-    Weekly Limit               ████████████████░░░░   79%  resets in 1d 11h
-    5-Hour Limit               ████████████████████  100%  resets in 4h 32m
+    Weekly Limit Remaining           ████████████████░░░░   79%  resets in 1d 11h
+    Five Hour Limit Remaining        ████████████████████  100%
+    Models within this group: Gemini Flash, Gemini Pro
   Claude and GPT models
-    Weekly Limit               ████████████████████  100%  resets in 6d 02h
-    5-Hour Limit               ████████████████████  100%  resets in 5h 00m
+    Weekly Limit Remaining           ████████████████████  100%
+    Five Hour Limit Remaining        ████████████████████  100%
+    Models within this group: Claude Opus, Claude Sonnet, GPT-OSS
 ...
 (pass --models to view individual models mapped to pools)
 ```
@@ -26,6 +28,8 @@ you@gmail.com (Google AI Pro)
 ## Install
 
 ```bash
+git clone https://github.com/hriday-singh/agyp.git
+cd agyp
 npm install
 npm run build
 npm link          # puts `agyp` on your PATH
@@ -91,14 +95,12 @@ Rule of thumb: `use` to change the default account, `run` to start a session now
 | `agyp label <target> [name]` | Set, update (e.g. `agyp label 1 hello`, alias: `rename`, `tag`), or remove (`--clear`) a profile's label |
 | `agyp remove <target>` | Forget a profile and delete its tokens from the keyring (aliases: `rm`, `delete`, `del`) |
 | `agyp doctor` | Keyring backend, `agy` binary, vault health (aliases: `check`, `health`) |
-| `agyp spinner [seconds]` | Interactive spinner demo with random status messages switching every 3s (aliases: `spin`, `loading`) |
 
 A **target** is an email, a list number, a label, or an unambiguous email prefix —
 `agyp use 2`, `agyp use work`, and `agyp use you.work@gmail.com` are the same thing.
 Labels cannot be numbers only (e.g. `"123"` is rejected because numbers resolve to list positions).
 
-`--json` works on `list`, `usage`, `weekly`, and `status`. `--all` on `usage` still works; it
-is now the default. Pass `--models` to `usage` to show the full per-model breakdown
+`--json` works on `list`, `usage`, `weekly`, and `status`. Pass `--models` to `usage` to show the full per-model breakdown
 mapped to their quota pools. Pass `--weekly` to jump directly to weekly forecasts.
 
 ## Things worth knowing
@@ -177,3 +179,8 @@ npm run build
 ```
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for how it works and where to extend it.
+
+## License
+
+MIT. Not affiliated with or endorsed by Google. `agyp` talks to the same
+endpoints the Antigravity CLI uses; they are undocumented and may change.

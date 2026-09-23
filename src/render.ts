@@ -1,5 +1,4 @@
 import type { ModelQuota, Snapshot } from './google.js';
-import type { ProfileWeeklyReport } from './weekly.js';
 
 const useColor = process.stdout.isTTY && !process.env.NO_COLOR;
 const ESC = String.fromCharCode(27);
@@ -169,57 +168,5 @@ export function renderSnapshot(snapshot: Snapshot, showModels = false): string {
   return lines.join('\n');
 }
 
-export function renderWeeklyProfile(report: ProfileWeeklyReport): string {
-  const lines: string[] = [];
-  const plan = report.planType ? dim(` (${report.planType})`) : '';
-  const header = report.label
-    ? `${bold(report.label)} ${dim(`(${report.email})`)}${plan}`
-    : `${bold(report.email)}${plan}`;
-  lines.push(header);
 
-  if (report.earliestReset) {
-    lines.push(
-      `  ${yellow('⏳ Earliest reset:')} in ${bold(report.earliestReset.humanDuration)} ${dim(`(${report.earliestReset.modelLabel})`)}`,
-    );
-  } else {
-    lines.push(`  ${green('✓ All quota pools active & ready')}`);
-  }
-
-  const renderModelLine = (model: ModelQuota, indent = '  ') => {
-    const name = model.label.length > 32 ? model.label.slice(0, 31) + '…' : model.label;
-    const fraction = model.remainingPercentage;
-    const gauge = fraction === undefined ? dim('─'.repeat(20)) : bar(fraction);
-    const pct = fraction === undefined ? dim('   n/a') : `${(fraction * 100).toFixed(0).padStart(4)}%`;
-    const reset = resetLabel(fraction, model.timeUntilResetMs);
-    const flag = model.isExhausted ? red(' EXHAUSTED') : '';
-    return `${indent}${name.padEnd(32)} ${gauge} ${pct}  ${reset}${flag}`;
-  };
-
-  if (report.weeklyModels.length > 0) {
-    lines.push(`  ${bold('Weekly / Multi-Day Pools:')}`);
-    for (const m of report.weeklyModels) {
-      lines.push(renderModelLine(m, '    '));
-    }
-  }
-
-  if (report.rollingModels.length > 0) {
-    lines.push(`  ${bold('Rolling / Daily Pools:')}`);
-    for (const m of report.rollingModels) {
-      lines.push(renderModelLine(m, '    '));
-    }
-  }
-
-  const statusParts: string[] = [];
-  if (report.healthyCount > 0) statusParts.push(green(`${report.healthyCount} healthy`));
-  if (report.lowCount > 0) statusParts.push(yellow(`${report.lowCount} low`));
-  if (report.exhaustedCount > 0) statusParts.push(red(`${report.exhaustedCount} exhausted`));
-  lines.push(`  ${dim('Status:')} ${statusParts.join(dim(', '))}`);
-
-  return lines.join('\n');
-}
-
-export function renderWeeklyReport(reports: ProfileWeeklyReport[]): string {
-  if (reports.length === 0) return dim('no profiles available');
-  return reports.map(renderWeeklyProfile).join('\n\n');
-}
 

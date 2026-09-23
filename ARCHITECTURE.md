@@ -53,7 +53,6 @@ third-party `antigravity-usage` npm package. We do not read or write it.
 src/
   index.ts     command dispatch and the workflows (the only file with policy in it)
   help.ts      CLI help text and command descriptions
-  weekly.ts    weekly quota analysis, categorization, and reset forecasting
   stats.ts     aggregate usage statistics across accounts and plans
   spinner.ts   interactive loading spinner controller and demo
   suggest.ts   did-you-mean command and target suggestions

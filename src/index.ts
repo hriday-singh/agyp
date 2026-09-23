@@ -18,7 +18,6 @@ import { bold, cyan, dim, green, red, renderSnapshot, spinner, yellow } from './
 import { cmdSpinner } from './spinner.js';
 import { cmdStats, findHealthiestProfile, recordUsageSnapshot, type HealthiestProfileResult } from './stats.js';
 import { ALL_COMMAND_NAMES, COMMAND_ALIASES, findBestMatch, formatSuggestion } from './suggest.js';
-import { cmdWeekly } from './weekly.js';
 import {
   PENDING_ACCOUNT,
   VAULT_SERVICE,
@@ -668,10 +667,7 @@ async function main(): Promise<void> {
       await cmdAutoRun(force, defaultBrowser, passthrough);
       return;
     case 'usage':
-      if (flags.has('weekly')) return cmdWeekly(flags.has('all') ? undefined : target, json, snapshotFor);
       return cmdUsage(flags.has('all') ? undefined : target, json, flags.has('models'));
-    case 'weekly':
-      return cmdWeekly(flags.has('all') ? undefined : target, json, snapshotFor);
     case 'update':
       return cmdUpdate(flags.has('check'), force);
     case 'status':

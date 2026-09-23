@@ -63,10 +63,6 @@ export const COMMAND_ALIASES: Record<string, string> = {
   spin: 'spinner',
   loading: 'spinner',
 
-  week: 'weekly',
-  forecast: 'weekly',
-  resets: 'weekly',
-  schedule: 'weekly',
 
   best: 'auto',
   pick: 'auto',
@@ -90,7 +86,6 @@ export const ALL_COMMAND_NAMES: string[] = [
   'remove', 'rm', 'delete', 'del', 'unlink', 'purge',
   'doctor', 'check', 'health', 'diag', 'diagnose',
   'stats', 'statistics', 'metrics', 'plan', 'plans',
-  'weekly', 'week', 'forecast', 'resets', 'schedule',
   'spinner', 'spin', 'loading',
   'help',
 ];

@@ -124,7 +124,7 @@ export function get(service: string, account: string): string | null {
     const r = run('security', ['find-generic-password', '-s', service, '-a', account, '-w']);
     if (r.error) throw missingBackend('security');
     if (r.status !== 0) return null; // 44 = not found
-    return r.stdout.replace(/\n$/, '');
+    return decodeGoKeyring(r.stdout.replace(/\n$/, ''));
   }
   const r = run('secret-tool', ['lookup', 'service', service, 'username', account]);
   if (r.error) throw missingBackend('secret-tool');
@@ -144,9 +144,10 @@ export function set(service: string, account: string, secret: string): void {
     return;
   }
   if (process.platform === 'darwin') {
-    // ponytail: `security` has no stdin path for the password, so it lands in argv
-    // and is briefly visible to `ps`. macOS is best-effort here; Windows/Linux are not.
-    const r = run('security', ['add-generic-password', '-U', '-s', service, '-a', account, '-w', secret]);
+    // Same as go-keyring (what agy uses): hex-encode and feed `security -i` over
+    // stdin, so the secret never shows up in `ps` and needs no quoting.
+    const hex = GO_KEYRING_HEX + Buffer.from(secret, 'utf8').toString('hex');
+    const r = run('security', ['-i'], `add-generic-password -U -s ${shQuote(service)} -a ${shQuote(account)} -w ${hex}\n`);
     if (r.error) throw missingBackend('security');
     if (r.status !== 0) fail('keychain write failed', r);
     return;
@@ -158,6 +159,20 @@ export function set(service: string, account: string, secret: string): void {
   );
   if (r.error) throw missingBackend('secret-tool');
   if (r.status !== 0) fail('secret-tool store failed', r);
+}
+
+const GO_KEYRING_HEX = 'go-keyring-encoded:';
+const GO_KEYRING_B64 = 'go-keyring-base64:';
+
+/** Undo go-keyring's macOS encoding (hex now, base64 in older versions). Plain values pass through. */
+export function decodeGoKeyring(value: string): string {
+  if (value.startsWith(GO_KEYRING_HEX)) return Buffer.from(value.slice(GO_KEYRING_HEX.length), 'hex').toString('utf8');
+  if (value.startsWith(GO_KEYRING_B64)) return Buffer.from(value.slice(GO_KEYRING_B64.length), 'base64').toString('utf8');
+  return value;
+}
+
+function shQuote(s: string): string {
+  return `'${s.replace(/'/g, `'"'"'`)}'`;
 }
 
 export function del(service: string, account: string): void {

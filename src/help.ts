@@ -37,17 +37,15 @@ ${bold('COMMANDS')}
   remove <target>            Delete a profile (aliases: rm, delete, del, unlink)
   doctor                     Check system health and diagnostics (aliases: check, health)
   stats                      Usage & subscription plan statistics across profiles (aliases: plan, statistics, metrics)
-  weekly [target]            Show weekly quota status and replenishment forecast (aliases: week, forecast, resets)
   spinner [seconds]          Show interactive loading spinner demo (aliases: spin, loading)
 
 ${USE_VS_RUN}
 ${bold('OPTIONS')}
-  --all               usage/weekly: every saved profile (the default; kept for habit)
+  --all               usage: every saved profile (the default; kept for habit)
   --auto              use/run: automatically select the healthiest account
-  --weekly            usage: view weekly quota breakdown and reset forecast
   --models            usage: display detailed per-model breakdown
   --check             update: only report model changes, do not update agy
-  --json              usage/weekly/list/status: machine-readable output
+  --json              usage/list/status: machine-readable output
   --label             adopt/login: a short name you can use as a target
   --clear             label: remove a profile's label
   --force             use/run/login: proceed even if agy appears to be running
@@ -254,21 +252,6 @@ ${bold('OPTIONS')}
   --reset    Clear cached usage statistics.
 `,
 
-  weekly: `${bold('agyp weekly')} — Show weekly quota status and replenishment forecast
-
-${bold('USAGE')}
-  agyp weekly [target] [--json]
-  agyp week [target] [--json]
-  agyp forecast [target] [--json]
-  agyp usage [target] --weekly [--json]
-
-${bold('DESCRIPTION')}
-  Analyzes model quotas for each profile and handle, identifying the earliest upcoming
-  quota reset and categorizing model pools into weekly/multi-day and rolling daily windows.
-
-${bold('OPTIONS')}
-  --json    Output machine-readable JSON format.
-`,
 
   spinner: `${bold('agyp spinner')} — Show interactive loading spinner demo
 

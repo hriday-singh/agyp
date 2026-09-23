@@ -88,7 +88,6 @@ Rule of thumb: `use` to change the default account, `run` to start a session now
 | `agyp auto` | Auto-select and switch to the healthiest profile with maximum quota (aliases: `best`, `pick`) |
 | `agyp autorun [-- args]` | Auto-select healthiest profile and launch `agy` immediately (aliases: `auto-run`) |
 | `agyp usage [target]` | Model quota and reset timers. No target = every profile (aliases: `quota`, `credits`) |
-| `agyp weekly [target]` | Weekly quota status, earliest reset countdown, and replenishment forecast (aliases: `week`, `forecast`, `resets`) |
 | `agyp plan` | Aggregate plan statistics, combined prompt credits, model quota pools, and recommended account (aliases: `stats`, `statistics`) |
 | `agyp update [--check]` | Update the `agy` CLI, then report which models were added, renamed or removed (aliases: `upgrade`) |
 | `agyp status` | What `agy` is authenticated as, and whether it matches a saved profile (aliases: `info`, `st`, `whoami`) |
@@ -100,8 +99,8 @@ A **target** is an email, a list number, a label, or an unambiguous email prefix
 `agyp use 2`, `agyp use work`, and `agyp use you.work@gmail.com` are the same thing.
 Labels cannot be numbers only (e.g. `"123"` is rejected because numbers resolve to list positions).
 
-`--json` works on `list`, `usage`, `weekly`, and `status`. Pass `--models` to `usage` to show the full per-model breakdown
-mapped to their quota pools. Pass `--weekly` to jump directly to weekly forecasts.
+`--json` works on `list`, `usage`, and `status`. Pass `--models` to `usage` to show the full per-model breakdown
+mapped to their quota pools.
 
 ## Things worth knowing
 

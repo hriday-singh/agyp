@@ -2,6 +2,15 @@
   "name": "agy-profiler",
   "version": "0.1.0",
   "description": "Multi-account profile manager and quota viewer for the Antigravity (agy) CLI",
+  "author": "Hriday Singh",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/hriday-singh/agyp.git"
+  },
+  "homepage": "https://github.com/hriday-singh/agyp#readme",
+  "bugs": {
+    "url": "https://github.com/hriday-singh/agyp/issues"
+  },
   "type": "module",
   "bin": {
     "agyp": "dist/index.js"

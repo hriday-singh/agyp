@@ -6,7 +6,7 @@ import { agyCommandLines, clearLive, finalFrame, isAgyBlob, isBgUpdater, liveTok
 import { chromePath, guestBrowserEnv } from '../src/browser.js';
 import { UserError, parseArgs } from '../src/args.js';
 import { catalogFromSnapshot, describeDiff, diffCatalog, isEmptyDiff } from '../src/catalog.js';
-import { CLOUDCODE, matchModelToGroup, parseQuotaGroups, parseSnapshot, shouldShowModel } from '../src/google.js';
+import { CLOUDCODE, matchModelToGroup, parseQuotaGroups, parseSnapshot, secretsInBinary, shouldShowModel } from '../src/google.js';
 import { COMMAND_HELP, HELP } from '../src/help.js';
 import { validateLabel } from '../src/index.js';
 import { winTarget } from '../src/keyring.js';
@@ -1027,5 +1027,14 @@ describe('healthiest profile auto-selection', () => {
     const p4 = parseArgs(['autorun', '--', 'start']);
     expect(p4.command).toBe('autorun');
     expect(p4.passthrough).toEqual(['start']);
+  });
+});
+
+describe('secretsInBinary', () => {
+  it('pulls every distinct desktop client secret out of a binary, in order', () => {
+    const a = 'GOCSPX-' + 'a'.repeat(28);
+    const b = 'GOCSPX-' + 'B_-9'.repeat(7);
+    const bin = Buffer.concat([Buffer.from([0, 1, 2]), Buffer.from(`${a} GOCSPX-short ${b}${a}`), Buffer.from([255])]);
+    expect(secretsInBinary(bin)).toEqual([a, b]);
   });
 });

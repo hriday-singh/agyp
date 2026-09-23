@@ -194,8 +194,9 @@ Endpoints (Antigravity's own, discovered from the shipped CLI):
 
 - `POST https://oauth2.googleapis.com/token` — refresh, using Antigravity's
   public desktop OAuth client. A desktop client "secret" is not a secret; it
-  ships in every copy. Override via `ANTIGRAVITY_OAUTH_CLIENT_ID` /
-  `ANTIGRAVITY_OAUTH_CLIENT_SECRET` if Google rotates it.
+  ships in every copy, so agyp reads it from the installed `agy` binary.
+  Override via `ANTIGRAVITY_OAUTH_CLIENT_ID` / `ANTIGRAVITY_OAUTH_CLIENT_SECRET`
+  if Google rotates it.
 - `POST https://daily-cloudcode-pa.googleapis.com/v1internal:loadCodeAssist` — tier and
   project id. Header `User-Agent: antigravity` is required. (Override via `ANTIGRAVITY_ENDPOINT`
   or falls back to `cloudcode-pa.googleapis.com`).

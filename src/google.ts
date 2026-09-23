@@ -4,16 +4,19 @@
  * A profile's refresh token is enough to read that account's quota, so `agyp
  * usage --all` never has to touch the live `agy` credential or switch accounts.
  *
- * The OAuth client below is Antigravity's own public desktop client (a desktop
- * OAuth "secret" is not a secret — it ships in every copy of the app). Override
- * with ANTIGRAVITY_OAUTH_CLIENT_ID / _SECRET if Google ever rotates it.
+ * The OAuth client is Antigravity's own public desktop client. Its "secret" is
+ * not a secret — it ships inside every agy binary — so we read it from the
+ * installed binary instead of committing it here. Override with
+ * ANTIGRAVITY_OAUTH_CLIENT_ID / _SECRET if Google ever rotates it.
  */
+
+import { readFileSync } from 'node:fs';
+import { agyPath } from './agy.js';
 
 export const OAUTH = {
   clientId:
     process.env.ANTIGRAVITY_OAUTH_CLIENT_ID ||
     '1071006060591-tmhssin2h21lcre235vtolojh4g403ep.apps.googleusercontent.com',
-  clientSecret: process.env.ANTIGRAVITY_OAUTH_CLIENT_SECRET || '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',
   tokenUrl: 'https://oauth2.googleapis.com/token',
   userInfoUrl: 'https://www.googleapis.com/oauth2/v3/userinfo',
 };
@@ -69,17 +72,51 @@ export interface Snapshot {
   quotaGroups?: QuotaGroup[];
 }
 
+/** Desktop OAuth client secrets embedded in a binary, in file order, deduped. */
+export function secretsInBinary(bin: Buffer): string[] {
+  const found = new Set<string>();
+  const re = /^GOCSPX-[A-Za-z0-9_-]{28}/;
+  for (let i = bin.indexOf('GOCSPX-'); i !== -1; i = bin.indexOf('GOCSPX-', i + 1)) {
+    const m = re.exec(bin.toString('latin1', i, i + 35));
+    if (m) found.add(m[0]);
+  }
+  return [...found];
+}
+
+let cachedSecrets: string[] | undefined;
+function clientSecrets(): string[] {
+  const env = process.env.ANTIGRAVITY_OAUTH_CLIENT_SECRET;
+  if (env) return [env];
+  if (!cachedSecrets) {
+    const bin = agyPath();
+    cachedSecrets = bin ? secretsInBinary(readFileSync(bin)) : [];
+  }
+  if (!cachedSecrets.length) {
+    throw new Error('could not find the OAuth client in the agy binary — install agy or set ANTIGRAVITY_OAUTH_CLIENT_SECRET');
+  }
+  return cachedSecrets;
+}
+
 export async function refreshAccessToken(refreshToken: string): Promise<string> {
-  const res = await fetch(OAUTH.tokenUrl, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({
-      client_id: OAUTH.clientId,
-      client_secret: OAUTH.clientSecret,
-      refresh_token: refreshToken,
-      grant_type: 'refresh_token',
-    }),
-  });
+  // ponytail: agy ships more than one desktop client; try each until Google accepts it.
+  const secrets = clientSecrets();
+  let res!: Response;
+  for (const secret of secrets) {
+    res = await fetch(OAUTH.tokenUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        client_id: OAUTH.clientId,
+        client_secret: secret,
+        refresh_token: refreshToken,
+        grant_type: 'refresh_token',
+      }),
+    });
+    if (res.status !== 401) {
+      if (res.ok && secrets[0] !== secret) secrets.unshift(...secrets.splice(secrets.indexOf(secret), 1));
+      break;
+    }
+  }
   if (!res.ok) {
     const body = await res.text();
     if (res.status === 400 || res.status === 401) {

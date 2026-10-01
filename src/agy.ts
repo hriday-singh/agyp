@@ -3,8 +3,8 @@
  * whether it is currently running, and launching it.
  *
  * `agy` stores exactly one auth blob, under keyring service `gemini`, account
- * `antigravity`. Nothing else about it is per-account — settings, history,
- * skills, MCP config and trusted workspaces are all shared. Swapping that one
+ * `antigravity`. Nothing else about it is per-account: settings, history,
+ * skills, MCP config, and trusted workspaces are all shared. Swapping that one
  * entry is therefore the whole of "switching profiles".
  */
 import { spawn, spawnSync } from 'node:child_process';
@@ -37,10 +37,10 @@ export function parseBlob(raw: string): AgyBlob {
   try {
     parsed = JSON.parse(raw);
   } catch {
-    throw new Error('credential blob is not JSON — agy may have changed its storage format');
+    throw new Error('credential blob is not JSON; agy may have changed its storage format');
   }
   if (!isAgyBlob(parsed)) {
-    throw new Error('credential blob is missing token.refresh_token — unexpected agy format');
+    throw new Error('credential blob is missing token.refresh_token (unexpected agy format)');
   }
   return parsed;
 }
@@ -112,7 +112,7 @@ export function clearLive(): void {
 /**
  * A running `agy` holds its token in memory and rewrites the keyring entry when
  * it refreshes. Swapping underneath it would let the old account's token
- * overwrite the profile we just activated — so callers must refuse to switch
+ * overwrite the profile we just activated. Callers must therefore refuse to switch
  * while it runs.
  */
 export function agyRunning(): boolean {
@@ -121,7 +121,7 @@ export function agyRunning(): boolean {
 
 /**
  * agy downloads and swaps in new versions from a detached `--bg-updater` child.
- * It holds no token, so it must not block switching — but it does hold agy's
+ * It holds no token, so it must not block switching; however, it does hold agy's
  * update lock, so `agy update` fails with "update already in progress" until it exits.
  */
 export function agyUpdating(): boolean {
@@ -186,7 +186,7 @@ export function finalFrame(raw: string): string {
  * a spinner cannot tick through `spawnSync`.
  *
  * `onLine` only sees completed lines, and only what survives the last `\r` on
- * one — agy redraws its own spinner in place, so those frames collapse into the
+ * one; agy redraws its own spinner in place, so those frames collapse into the
  * final text and never reach the terminal.
  */
 export function runAgyQuiet(

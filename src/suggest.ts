@@ -137,5 +137,5 @@ export function findBestMatch(input: string, candidates: string[], maxDistance =
 
 export function formatSuggestion(input: string, bestMatch: string | null, prefix = 'did you mean'): string {
   if (!bestMatch) return '';
-  return ` — ${prefix} "${bestMatch}"?`;
+  return ` (${prefix} "${bestMatch}"?)`;
 }

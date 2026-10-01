@@ -1,8 +1,8 @@
 /**
  * Model catalog tracking.
  *
- * Nothing in this tool hardcodes a model name — `usage` renders whatever the API
- * returns — so a rename or removal never breaks it. What it *can't* do on its own
+ * Nothing in this tool hardcodes a model name; `usage` renders whatever the API
+ * returns, so a rename or removal never breaks it. What it cannot do on its own
  * is tell you the lineup changed, which matters after `agy update`.
  *
  * So we remember the last catalog we saw per account and diff against it. No
@@ -64,8 +64,8 @@ export function saveCatalog(email: string, catalog: Catalog): void {
 
 /**
  * A model id that survives with a new display name is a rename; ids appearing or
- * vanishing are additions and removals. Ids are the stable identity here —
- * display names are marketing and change on their own schedule.
+ * vanishing are additions and removals. Model IDs serve as the stable identity here;
+ * display names can change on their own schedule.
  */
 export function diffCatalog(before: Catalog, after: Catalog): CatalogDiff {
   const diff: CatalogDiff = { added: [], removed: [], renamed: [] };

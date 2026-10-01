@@ -189,7 +189,7 @@ export function cmdStats(json: boolean, reset: boolean): void {
   }
 
   if (snapshots.length === 0) {
-    console.log(dim('no usage statistics cached yet — run `agyp usage` to fetch model & plan data across accounts'));
+    console.log(dim('no usage statistics cached yet. Run `agyp usage` to fetch model & plan data across accounts.'));
     return;
   }
 

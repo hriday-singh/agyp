@@ -1,7 +1,7 @@
 /**
  * Cross-platform OS keyring access.
  *
- * Every secret this tool touches lives in the OS keyring — both the live `agy`
+ * Every secret this tool touches lives in the OS keyring, including both the live `agy`
  * credential and our saved profiles. Nothing secret is ever written to disk.
  *
  * The (service, account) -> backend mapping matches how `agy` (Go, via

@@ -4,7 +4,7 @@
  *
  * agy opens URLs the way every Go CLI does (github.com/pkg/browser): it shells
  * out to `rundll32 url.dll,FileProtocolHandler <url>` on Windows and `xdg-open`
- * / `open` elsewhere — all three resolved through PATH. So we do not need agy's
+ * / `open` elsewhere (all three resolved through PATH). We therefore do not need agy's
  * cooperation: we write a tiny shim with one of those names into a temp dir,
  * put that dir first on PATH for the child process, and the shim launches
  * Chrome in guest mode with the URL.

@@ -69,8 +69,8 @@ export function spinner(text: string): SpinnerController {
 }
 
 /**
- * A full bucket's resetTime is just "now + window" — the window only starts on
- * first use — so a countdown there is noise that never gets closer.
+ * A full bucket's resetTime is simply "now + window". Because the window only begins on
+ * first use, a countdown at 100% capacity is static noise.
  */
 export function resetLabel(fraction: number | undefined, ms: number | undefined): string {
   if (!ms || (fraction !== undefined && fraction >= 1)) return '';

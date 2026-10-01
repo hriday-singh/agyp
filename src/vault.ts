@@ -26,7 +26,7 @@ export const PENDING_ACCOUNT = '_pending';
 export interface ProfileMeta {
   email: string;
   label?: string;
-  /** sha256(refresh_token) truncated — identity check without exposing the token. */
+  /** sha256(refresh_token) truncated; identity check without exposing the token. */
   fingerprint: string;
   /** Cloud Code project, cached so quota lookups skip loadCodeAssist. */
   projectId?: string;
@@ -65,7 +65,7 @@ export function loadIndex(): VaultIndex {
     if (!Array.isArray(parsed.profiles)) throw new Error('bad shape');
     return { version: 1, active: parsed.active, profiles: parsed.profiles };
   } catch {
-    throw new Error(`${path} is corrupt — delete it to start over (secrets live in the keyring, not this file)`);
+    throw new Error(`${path} is corrupt; delete it to start over (secrets live in the keyring, not this file)`);
   }
 }
 
@@ -141,7 +141,7 @@ export function install(index: VaultIndex, profile: ProfileMeta): VaultIndex {
   const raw = getSecret(profile.email);
   if (!raw) {
     throw new UserError(
-      `no stored credential for ${profile.email} — the keyring entry is gone. Run \`agyp login\` to re-add it.`,
+      `no stored credential for ${profile.email}; the keyring entry is missing. Run \`agyp login\` to re-add it.`,
     );
   }
   writeLive(raw);
@@ -191,7 +191,7 @@ export function resolve(index: VaultIndex, target: string): ProfileMeta {
   );
   if (matches.length === 1) return matches[0]!;
   if (matches.length > 1) {
-    throw new Error(`"${target}" matches ${matches.map((m) => m.email).join(', ')} — be more specific`);
+    throw new Error(`"${target}" matches ${matches.map((m) => m.email).join(', ')}; please be more specific`);
   }
   const candidates: string[] = [];
   for (const p of index.profiles) {
@@ -200,7 +200,7 @@ export function resolve(index: VaultIndex, target: string): ProfileMeta {
   }
   const bestMatch = findBestMatch(target, candidates);
   const suggestion = formatSuggestion(target, bestMatch);
-  throw new Error(`no profile matching "${target}"${suggestion} — run \`agyp list\``);
+  throw new Error(`no profile matching "${target}"${suggestion}. Run \`agyp list\` to view available profiles.`);
 }
 
 export function upsert(index: VaultIndex, meta: ProfileMeta): VaultIndex {

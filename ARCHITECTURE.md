@@ -1,6 +1,6 @@
 # Architecture
 
-Notes for whoever changes this next (probably you, in six months).
+Architectural reference and technical specifications for the agyp CLI.
 
 ## What `agy` actually stores
 
@@ -28,59 +28,50 @@ The value is UTF-8 JSON:
 }
 ```
 
-That is the complete account identity. Everything else under `~/.gemini/` —
-`antigravity-cli/settings.json`, conversation history, skills, plugins, MCP
-config, trusted workspaces — is account-independent and shared.
+That is the complete account identity. Everything else under `~/.gemini/` (including `antigravity-cli/settings.json`, conversation history, skills, plugins, MCP config, and trusted workspaces) is account-independent and shared.
 
-When the OS keyring daemon is unavailable (such as headless Linux, SSH, or WSL
-environments without D-Bus Secret Service), `agy` falls back to storing the token
-in `~/.gemini/antigravity-cli/antigravity-oauth-token`. `agyp` checks the OS keyring
-first and falls back to this file, mirroring writes to both when switching profiles.
+When the OS keyring daemon is unavailable (such as headless Linux, SSH, or WSL environments without D-Bus Secret Service), `agy` falls back to storing the token in `~/.gemini/antigravity-cli/antigravity-oauth-token`. `agyp` checks the OS keyring first and falls back to this file, mirroring writes to both when switching profiles.
 
-Two things follow:
+Two architectural principles follow:
 
-1. **A profile switch updates the live keyring entry and token file.** No file
-   shuffling, no `%APPDATA%` redirection, no per-profile home directories.
-2. **There is exactly one active slot.** Two accounts cannot be live at once on one
-   Windows/Linux user account. Parallel sessions would need separate OS users.
+1. **A profile switch updates the live keyring entry and token file.** No file shuffling, no `%APPDATA%` redirection, and no per-profile home directories are required.
+2. **There is exactly one active slot.** Two accounts cannot be active simultaneously under one operating system user account. Parallel sessions require separate OS user accounts.
 
-`%APPDATA%/antigravity-usage/` looks related but is not — it belongs to the
-third-party `antigravity-usage` npm package. We do not read or write it.
+`%APPDATA%/antigravity-usage/` is unrelated; it belongs to the third-party `antigravity-usage` package and is neither read nor modified by `agyp`.
 
 ## Layout
 
 ```
 src/
-  index.ts     command dispatch and the workflows (the only file with policy in it)
+  index.ts     command dispatch and workflows (the single policy layer)
   help.ts      CLI help text and command descriptions
   stats.ts     aggregate usage statistics across accounts and plans
   spinner.ts   interactive loading spinner controller and demo
   suggest.ts   did-you-mean command and target suggestions
-  agy.ts       the live credential, process detection, launching agy
+  agy.ts       live credential management, process detection, launching agy
   vault.ts     profile storage: keyring for secrets, JSON index for metadata
-  keyring.ts   the one place that knows about Credential Manager / libsecret / Keychain
-  google.ts    OAuth refresh + Cloud Code quota API
-  catalog.ts   remembers the model lineup so changes can be reported
-  browser.ts   sends agy's OAuth page to a Chrome guest window
-  render.ts    terminal output
+  keyring.ts   platform-specific storage: Credential Manager, libsecret, Keychain
+  google.ts    OAuth refresh and Cloud Code quota API
+  catalog.ts   tracks model lineups to detect catalog changes
+  browser.ts   routes OAuth authentication to a Chrome guest window
+  render.ts    terminal output rendering
   args.ts      argument parsing
 ```
 
-Dependency direction is one-way: `index` → everything, `vault`/`agy` → `keyring`.
-Nothing below `index.ts` prints or decides policy.
+Dependency direction is strictly one-way: `index` → components, `vault`/`agy` → `keyring`. No component below `index.ts` prints output or decides policy.
 
-## Storage split
+## Storage Split
 
-Secrets go in the OS keyring under service `agy-profiler`, one entry per email.
-Metadata goes in `~/.agy-profiler/profiles.json` (0600, in a 0700 directory):
+Secrets are stored in the OS keyring under service `agy-profiler`, with one entry per email address.
+Metadata is stored in `~/.agy-profiler/profiles.json` (mode 0600 in a 0700 directory):
 
 ```json
 {
   "version": 1,
-  "active": "you@gmail.com",
+  "active": "user@example.com",
   "profiles": [
     {
-      "email": "you@gmail.com",
+      "email": "user@example.com",
       "label": "personal",
       "fingerprint": "3f9a1c...",
       "projectId": "calm-rookery-xxxxx",
@@ -91,202 +82,98 @@ Metadata goes in `~/.agy-profiler/profiles.json` (0600, in a 0700 directory):
 }
 ```
 
-Reusing the keyring for our own vault (rather than encrypting a file) means no
-DPAPI-vs-libsecret split, no key management, and no plaintext tokens on disk.
+Reusing the keyring for the vault (rather than encrypting a file manually) eliminates DPAPI-vs-libsecret splits, key management overhead, and plaintext token storage on disk.
 
-`fingerprint` is `sha256(refresh_token)` truncated to 16 hex characters. It
-answers "which profile is live?" from one keyring read, without pulling every
-profile's secret out of the keyring to compare.
+`fingerprint` represents `sha256(refresh_token)` truncated to 16 hexadecimal characters. It resolves which profile is currently live from a single keyring read, without retrieving secrets for every profile.
 
-`projectId` is cached because quota lookups otherwise need an extra
-`loadCodeAssist` round trip per account.
+`projectId` is cached because quota lookups otherwise require an extra `loadCodeAssist` network round trip per account.
 
-The index is disposable — delete it and re-run `agyp adopt`. The secrets are the
-part that matters.
+The index file is reproducible: deleting it and running `agyp adopt` reconstructs metadata for the active profile. Secrets in the OS keyring remain authoritative.
 
-## The sync-back invariant
+## The Sync-Back Invariant
 
-**Before the live credential is replaced, it must be saved back into the profile
-that owns it.**
+**Before the live credential is replaced, it must be saved back into the profile that owns it.**
 
-Tokens rotate. `agy` refreshes its access token during a session and writes the
-result back to the same keyring entry. If we switched away without capturing
-that, the profile would keep going stale, and eventually its refresh token could
-be the invalid one.
+OAuth tokens rotate during usage. `agy` refreshes its access token during active sessions and persists the update to the live keyring entry. Switching accounts without capturing this update would allow profile credentials to become stale, eventually invalidating refresh tokens.
 
-`syncBack()` in `index.ts` runs before every switch and after every `agyp run`:
+`syncBack()` in `src/index.ts` executes before every profile switch and after every `agyp run`:
 
-1. Read the live credential. No credential → nothing to do.
-2. Fingerprint its refresh token. Matches a profile → save it there. Done, no
-   network.
-3. No match → **ask Google whose token this is** (refresh + `userinfo`) before
-   writing anywhere.
+1. Read the live credential. If no credential exists, take no action.
+2. Fingerprint the refresh token. If it matches a saved profile, update that profile's secret immediately without network calls.
+3. If no fingerprint matches, query Google directly (`refresh` + `userinfo`) to identify the account before writing to storage.
 
-Step 3 is the important one. The obvious shortcut — "assume it belongs to
-`index.active`" — is wrong: a user who runs `/login` inside `agy` and signs in as
-a different account would have that account's token saved under the previous
-profile, silently corrupting both. When we cannot identify a token (offline, or
-an unknown account), we warn and leave it alone. Never guess.
+Step 3 is critical. Assuming that an unrecognized token belongs to `index.active` is unsafe: if a user executes `/login` inside `agy` with a different account, that token would overwrite the previous profile and corrupt account state. When an account cannot be identified (e.g. offline status or unmanaged account), `agyp` issues a warning and leaves the credential untouched.
 
-## Login capture
+## Login Capture
 
-`agy` has no `login` subcommand; authentication happens inside an interactive
-session. So `agyp login`:
+`agy` has no standalone login subcommand; authentication occurs during interactive sessions. `agyp login` operates as follows:
 
-1. Sync-back, then copy the current credential to keyring entry
-   `agy-profiler:_pending`.
-2. Delete the live entry, so `agy` starts unauthenticated and prompts.
-3. Run `agy` attached to the terminal. The user signs in and exits.
-4. Read the new credential, identify it via `userinfo`, save it as a profile.
-5. Delete `_pending`.
+1. Execute `syncBack()`, then copy the current credential to keyring entry `agy-profiler:_pending`.
+2. Delete the live entry so `agy` starts unauthenticated and prompts for login.
+3. Launch `agy` attached to the terminal. The user authenticates and exits.
+4. Read the new credential, identify the account via `userinfo`, and persist it as a profile.
+5. Delete the temporary `_pending` backup.
 
-If anything goes wrong in between, `recoverPending()` — called at the start of
-every command — puts the old credential back. That is why the backup lives in
-the keyring rather than in memory: a killed terminal must not lose an account.
+If the process is interrupted, `recoverPending()` (invoked at the beginning of commands) restores the previous credential. Storing the backup in the keyring guarantees resilience even if the terminal process is abruptly terminated.
 
-## Browser isolation during sign-in
+## Browser Isolation During Sign-In
 
-Step 3 above opens a Google sign-in page, and by default it would open in your
-normal browser — where you are probably already signed in as someone. That is the
-wrong session in both directions: the OAuth page silently picks the account
-already logged in, and the account you add stays logged in there afterwards.
+Sign-in initiates a Google OAuth web page. By default, this opens in the system browser, where an existing account session may already be signed in. That creates session conflicts in both directions: OAuth automatically selects the pre-existing account, and the newly added account remains signed in to the default browser.
 
-`agy` opens URLs the way every Go CLI does (`github.com/pkg/browser`): it shells
-out to `rundll32 url.dll,FileProtocolHandler <url>` on Windows and `xdg-open` /
-`open` elsewhere, each resolved through `PATH`. That means we do not need `agy`'s
-cooperation and do not have to patch anything:
+`agy` delegates URL opening to standard platform handlers (`rundll32 url.dll,FileProtocolHandler <url>` on Windows; `xdg-open` or `open` on Unix systems), resolved via `PATH`. `agyp` intercepts this transparently:
 
-1. `guestBrowserEnv()` writes a temp directory containing a shim named after
-   whichever of those the platform uses (`rundll32.cmd`, or executable `xdg-open`
-   / `open` / `x-www-browser` / `www-browser` scripts).
-2. The shim runs `chrome --guest <url>`.
-3. That directory is prepended to `PATH` for the child `agy` only.
+1. `guestBrowserEnv()` generates a temporary directory containing an executable shim named after the platform handler (`rundll32.cmd` on Windows, shell scripts on Unix).
+2. The shim launches `chrome --guest <url>`.
+3. The temporary directory is prepended to `PATH` for the child `agy` process only.
 
-Guest mode, not a second Chrome profile: a guest window shares no cookies with
-your profiles and keeps none when it closes. `--default-browser` skips the shim
-entirely, and so does a machine with no Chrome installed (with a warning) —
-sign-in still works, it just is not isolated.
+Guest mode provides complete session isolation: a guest window shares no cookies with default profiles and leaves no residue upon exit. `--default-browser` bypasses the shim. If Chrome or Chromium is not detected, `agyp` emits a warning and falls back to default browser behavior.
 
-On Linux the browser is found with `which`, in order: `google-chrome`,
-`google-chrome-stable`, `chromium`, `chromium-browser`. Chromium is fine —
-`--guest` is a Chromium flag, not a Google-build extra — and snap/apt/dnf
-installs all put a wrapper on `PATH`. A Flatpak-only install does not, so that
-case falls back to the default browser.
+On Linux, browsers are detected via `which` in order: `google-chrome`, `google-chrome-stable`, `chromium`, `chromium-browser`. Chromium is fully supported because `--guest` is a standard Chromium flag, and standard Linux package managers place a wrapper on `PATH`.
 
-Two known edges. Chrome is located by well-known path (Windows/macOS) or `which`
-(Linux), so an unusual install falls back to the default browser. And the Windows
-shim is a batch file, which means the URL passes through `cmd` quoting; Go's
-post-CVE-2024-24576 batch escaping quotes the `&` in an OAuth URL correctly, but
-an `agy` built with a pre-2024 Go toolchain would truncate it — `--default-browser`
-is the escape hatch if a sign-in page ever loads half a URL.
+Two known edge cases:
+- Non-standard browser install locations fall back to the default browser.
+- The Windows shim executes as a batch file (`.cmd`), passing URLs through `cmd.exe` escaping. Modern Go toolchains escape `&` characters correctly; `--default-browser` serves as an escape hatch for older binaries.
 
-## Why switching is blocked while `agy` runs
+## Process Gating During Execution
 
-A running `agy` holds its token in memory and rewrites the keyring entry on
-refresh. Switch underneath it and the old account's token lands on top of the
-profile you just activated. `agyRunning()` (`tasklist` / `pgrep`) gates `use`,
-`login`, and targeted `run`. `--force` exists for when you are sure.
+A running `agy` process maintains its active token in memory and rewrites the keyring entry upon refresh. Switching profiles while `agy` is running allows the active process to overwrite the newly activated profile. `agyRunning()` inspects active processes (`tasklist` on Windows, `pgrep`/`ps` on Unix) to gate `use`, `login`, and targeted `run`. The `--force` flag overrides this gate when needed.
 
-## Quota
+## Quota Resolution
 
-Endpoints (Antigravity's own, discovered from the shipped CLI):
+`agyp` queries Google Cloud Code endpoints discovered from the Antigravity CLI:
 
-- `POST https://oauth2.googleapis.com/token` — refresh, using Antigravity's
-  public desktop OAuth client. A desktop client "secret" is not a secret; it
-  ships in every copy, so agyp reads it from the installed `agy` binary.
-  Override via `ANTIGRAVITY_OAUTH_CLIENT_ID` / `ANTIGRAVITY_OAUTH_CLIENT_SECRET`
-  if Google rotates it.
-- `POST https://daily-cloudcode-pa.googleapis.com/v1internal:loadCodeAssist` — tier and
-  project id. Header `User-Agent: antigravity` is required. (Override via `ANTIGRAVITY_ENDPOINT`
-  or falls back to `cloudcode-pa.googleapis.com`).
-- `POST https://daily-cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels` —
-  model catalog and lineup metadata. Note: Google returns static placeholder
-  values (`remainingFraction: 1`, 5h resets) here now that quota is tracked in
-  shared pools.
-- `POST https://daily-cloudcode-pa.googleapis.com/v1internal:retrieveUserQuotaSummary` —
-  authoritative pooled quota groups (e.g., "Gemini Models", "Claude and GPT models")
-  with multi-bucket windows ("weekly" and "5h") and live `remainingFraction`.
+- `POST https://oauth2.googleapis.com/token`: Token refresh, using Antigravity's desktop OAuth client embedded in the `agy` binary. Can be overridden via `ANTIGRAVITY_OAUTH_CLIENT_ID` and `ANTIGRAVITY_OAUTH_CLIENT_SECRET`.
+- `POST https://daily-cloudcode-pa.googleapis.com/v1internal:loadCodeAssist`: Tier and project ID resolution. Requires the `User-Agent: antigravity` header.
+- `POST https://daily-cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels`: Model catalog and lineup metadata.
+- `POST https://daily-cloudcode-pa.googleapis.com/v1internal:retrieveUserQuotaSummary`: Authoritative pooled quota groups (e.g. "Gemini Models", "Claude and GPT models") with multi-bucket windows ("weekly" and "5h") and live `remainingFraction`.
 
-Because this only needs a refresh token, `agyp usage` reads every account in
-parallel without touching the live credential — which is why "all profiles" is the
-default and a target is the narrowing case, not the other way round. Failures are
-per-account (`Promise.allSettled`): one expired refresh token prints its error on
-that account's line and the rest still render.
+Because quota inspection only requires a refresh token, `agyp usage` queries accounts concurrently without modifying the active keyring credential. Account querying is performed via `Promise.allSettled`: failure on one account (such as an expired refresh token) is reported individually while remaining profiles render normally.
 
-Quota resolution and grouping in `parseSnapshot`:
+Quota resolution and grouping rules in `parseSnapshot`:
 
-- **Quota is pooled by groups and windows.** Google groups models into shared pools
-  (Gemini models share a weekly and 5-hour limit bucket; Claude and GPT models share
-  a 3P weekly and 5-hour bucket). The authoritative capacity is the binding minimum
-  across active buckets.
-- **`agyp usage` renders quota groups directly**, showing both weekly and 5-hour
-  capacities and reset countdowns. Passing `--models` renders the detailed per-model
-  breakdown mapped to these pools.
-- **Several model ids share one display name and one quota pool** (for example
-  `gemini-2.5-flash`, `gemini-2.5-flash-thinking` and `gemini-3.1-flash-lite` are
-  all "Gemini 3.1 Flash Lite"). They are grouped into one row, keeping the
-  earliest reset time — showing them separately reads as separate budgets.
-- **`quotaInfo.remainingFraction` is honest.** If Google omits the remaining-fraction
-  field, it renders as `n/a` instead of guessing 100%.
+- **Pooled groups and windows**: Google groups models into shared pools (for example, Gemini models share weekly and 5-hour limit buckets; Claude and GPT models share separate weekly and 5-hour buckets). Authoritative capacity reflects the binding minimum across active buckets.
+- **Direct quota group rendering**: `agyp usage` displays quota groups directly, including weekly and 5-hour capacities and reset timers. The `--models` option adds detailed model mappings.
+- **Model alias consolidation**: Multiple model IDs that share a display name and quota pool (e.g. `gemini-2.5-flash`, `gemini-2.5-flash-thinking`, and `gemini-3.1-flash-lite`) are consolidated into a single entry with the earliest reset time to avoid presenting misleading duplicate capacity.
+- **Authentic fraction reporting**: When the API omits the `remainingFraction` field, `agyp` displays `n/a` rather than assuming 100%.
 
-These are undocumented internal endpoints. If quota ever returns nonsense, dump a
-raw response first — the shape has changed before.
+## Model Catalog Drift
 
-## Model catalog drift
+Antigravity adds, renames, and retires models over time. The design guarantees resilience without maintenance: no model ID or display name is hardcoded in the codebase. `agyp usage` renders API responses dynamically, allowing changes to appear immediately.
 
-Antigravity adds, renames and retires models on its own schedule, usually around
-an `agy update`. The design decision here is that **there is nothing to adapt**:
-no model id or display name is hardcoded anywhere in this tool. `usage` renders
-whatever `fetchAvailableModels` returns, so a rename shows the new name, a
-retired model stops appearing, and a new one appears — with no code change and no
-config to maintain. Adding a per-model mapping table would create the very
-maintenance burden it appears to solve.
+`catalog.ts` provides visibility into changes:
+- It maintains the last-seen `modelId -> displayName` map per account in `~/.agy-profiler/models.json`.
+- It computes diffs when lineups change.
+- Stable identity is established via **model ID**, not display name. Rebrands (such as updating `gemini-3.1-pro-high` display text) are tracked as renames rather than simultaneous additions and deletions.
 
-What was actually missing was *visibility*, which is what `catalog.ts` provides.
-It stores the last-seen `modelId -> displayName` map per account in
-`~/.agy-profiler/models.json` and diffs against it.
+`agyp update` executes `agy update` and displays catalog diffs. `agyp usage` evaluates catalog drift and prints a notification when changes are detected.
 
-Identity is the **model id**, not the display name. A rebrand
-(`gemini-3.1-pro-high`: "Gemini 3.1 Pro (High)" -> "Gemini 3.5 Pro (High)") is one
-rename, not a removal plus an addition. The reverse also holds: several ids can
-share a display name, so display names cannot be identities.
+## Extension Guidelines
 
-`agyp update` runs `agy update` and then diffs. `agyp usage` diffs silently and
-prints a one-line pointer when something moved — whichever command notices first
-reports it, and the baseline is then current for the other. The first sighting of
-an account is recorded without reporting; there is nothing to compare against.
+- **Adding a command**: Add a branch in `main()` and implement the corresponding handler function. Any command altering the live credential must execute `syncBack()` first and enforce `requireIdle()` unless `--force` is provided.
+- **Adding platform support**: Implement platform-specific branches in `keyring.ts` (`get`, `set`, `del`, `backendName()`).
+- **Usage tracking**: `agyp usage --json` provides full programmatic access for external metrics collection or scheduled logging.
+- **Automation**: `list`, `status`, and `usage` all support the `--json` flag for integration into custom scripts.
 
-A corrupt `models.json` is discarded rather than raised — a bad catalog file is
-never a reason to fail a quota check.
+## Testing Strategy
 
-## Extending it
-
-- **A new command** — add a case in `main()` and a `cmdX` function. Anything that
-  replaces the live credential must call `syncBack()` first and `requireIdle()`
-  unless `--force`.
-- **A new platform** — one branch each in `keyring.ts` `get`/`set`/`del`, plus
-  `backendName()`. Nothing else is platform-aware except `agyRunning()`.
-- **Historical usage tracking** — `usage --json` is already the machine-readable
-  surface; append snapshots to a log and read them back. Do not add a background
-  daemon; a scheduled `agyp usage --all --json >> log` is the whole feature.
-- **Scripting** — `list`, `status`, and `usage` all take `--json`.
-
-## Testing
-
-`npm test` covers the pure logic: argument parsing, target resolution,
-fingerprinting, credential-blob validation, quota parsing/grouping, and
-rendering. Keyring and network calls are not mocked — mocking them would test
-the mocks. Exercise those with `agyp doctor`, `agyp adopt`, and `agyp usage`
-against a real account.
-
-Exercised for real on Windows: `doctor`, `adopt`, `list`, `status`, `usage`, `label`/`rename`, and
-`update --check` (including a simulated add/rename/remove). Not yet exercised:
-`login`, `use`, `run`, and `update` without `--check` — all of them write the live
-credential or replace the agy binary, which needs a second account and a closed
-session to test safely. The keyring read/write round trip they depend on is
-proven by `adopt` + `usage`.
-
-Verified on Windows 11 (Credential Manager) with Node 22. The Linux path is
-written against `secret-tool` and the same `service`/`username` attribute pair
-`agy` uses, but has not been run on a Linux box yet — check it with
-`agyp doctor` first.
+The test suite (`npm test`) validates core business logic: argument parsing, target resolution, fingerprint generation, credential blob parsing, quota aggregation, and output formatting. Keyring and network operations rely on live system verification via `agyp doctor`, `agyp adopt`, and `agyp usage`.

@@ -1,18 +1,16 @@
-# agyp — multi-account profiles for the Antigravity CLI
+# agyp: Multi-Account Profile Manager for the Antigravity CLI
 
-`agy` supports one signed-in Google account at a time. `agyp` keeps as many as you
-want, switches between them in a second, and shows model quota for all of them
-without switching at all.
+`agyp` provides multi-account profile management and quota inspection for the Google Antigravity (`agy`) command-line interface. While `agy` maintains a single active Google authentication credential at a time, `agyp` securely manages multiple accounts, switches between them instantly, and inspects model quota across all accounts concurrently without modifying your active session.
 
-Works on Windows and Linux (macOS best-effort). No runtime dependencies.
+Supported platforms: Windows and Linux (macOS best-effort). Zero external runtime dependencies.
 
 ```
 $ agyp list
-●  1. you@gmail.com                 personal  last used 2026-08-10
-○  2. you.work@gmail.com            work      last used 2026-08-09
+●  1. alex.personal@gmail.com          personal  last used 2026-08-10
+○  2. alex.work@gmail.com              work      last used 2026-08-09
 
 $ agyp usage
-you@gmail.com (Google AI Pro)
+alex.personal@gmail.com (Google AI Pro)
   Gemini Models
     Weekly Limit Remaining           ████████████████░░░░   79%  resets in 1d 11h
     Five Hour Limit Remaining        ████████████████████  100%
@@ -25,161 +23,169 @@ you@gmail.com (Google AI Pro)
 (pass --models to view individual models mapped to pools)
 ```
 
-## Install
+## Key Capabilities
+
+- **Instant Switching**: Switch active credentials in the OS keyring without modifying local configuration files or directories.
+- **Concurrent Quota Inspection**: Query pooled model quotas and prompt credits across all saved accounts simultaneously without switching.
+- **Isolated Authentication**: Launch new logins in dedicated Chrome guest windows to prevent session collision with your system browser.
+- **Credential Integrity**: Automatically synchronize rotated tokens back to profile storage on session exit.
+- **Process Safety**: Prevent accidental credential collisions while `agy` is running.
+- **Model Drift Detection**: Track dynamic model catalog changes and notify you when models are added, renamed, or retired.
+
+## Installation
+
+### Prerequisites
+
+- Node.js 18 or higher
+- The `agy` CLI installed and available on your system `PATH`
+
+### Build and Install
 
 ```bash
 git clone https://github.com/hriday-singh/agyp.git
 cd agyp
 npm install
 npm run build
-npm link          # puts `agyp` on your PATH
+npm link
 ```
 
-Requires Node 18+ and the `agy` CLI on your PATH.
+### Linux Keyring Configuration
 
-On Linux with a graphical session, `agyp` integrates with Secret Service keyrings:
+On Linux with a graphical session, `agyp` integrates with standard Secret Service daemons (`gnome-keyring` or `kwallet`):
 
 ```bash
-sudo apt install libsecret-tools      # Debian/Ubuntu
-sudo dnf install libsecret            # Fedora
+# Debian / Ubuntu
+sudo apt install libsecret-tools
+
+# Fedora / RHEL
+sudo dnf install libsecret
 ```
 
-with `gnome-keyring` or `kwallet` running. On headless Linux, containers, or SSH sessions without a D-Bus Secret Service daemon, `agyp` automatically falls back to secure file-based storage (`0600` permissions in `~/.agy-profiler/secrets/` and `~/.gemini/antigravity-cli/antigravity-oauth-token`). `agyp doctor` reports the active storage mode.
+On headless Linux environments, containers, or SSH sessions without D-Bus Secret Service, `agyp` falls back to secure file-based storage with `0600` permissions in `~/.agy-profiler/secrets/` and `~/.gemini/antigravity-cli/antigravity-oauth-token`. Run `agyp doctor` to check the active storage backend.
 
-## Getting started
+## Quick Start
 
 ```bash
-agyp adopt --label personal   # save the account you are already signed into
-agyp login --label work       # add a second one (signs you in through agy)
-agyp list                     # see them, and which one is live
-agyp label 1 hello            # set profile #1's label to "hello"
-agyp label work job           # rename label "work" to "job"
-agyp use job                  # switch
-agyp run personal             # switch and launch agy in one go
-agyp usage                    # quota for every account (default)
-agyp usage job                # quota for one of them
+# Save the account currently signed in to agy
+agyp adopt --label personal
+
+# Add a second account (authenticates through an isolated guest window)
+agyp login --label work
+
+# View all saved profiles and inspect the active account
+agyp list
+
+# Switch the default active profile
+agyp use work
+
+# Switch to a profile and launch agy immediately
+agyp run personal
+
+# Check model quota across all accounts
+agyp usage
+
+# Check model quota for a single account
+agyp usage work
 ```
 
-`adopt` first — it captures your existing session, so you never have to re-login
-for accounts you already use.
+Run `agyp adopt` initially to capture your existing session without having to sign in again.
 
-### `use` vs `run`
+## Command Workflows: `use` vs `run`
 
-`agyp help use` prints this at any time.
+`agyp help use` displays workflow details at any time.
 
-- **`use <target>`** swaps the credential and exits. `agy` is not started; the next
-  time you start it yourself — any terminal, or the Antigravity editor — it comes
-  up as that account and stays there until you switch again.
-- **`run [target] [-- args]`** swaps (only if you name a target) and then launches
-  `agy` right there, attached to your terminal. Everything after `--` goes to `agy`
-  untouched, and any token it refreshes is written back on exit.
+- **`agyp use <target>`**: Updates the active credential in the OS keyring and exits immediately. The `agy` CLI is not launched. Subsequent `agy` executions (from any terminal or editor) use this active profile until switched again.
+- **`agyp run [target] [-- args]`**: Switches to the specified profile (if provided) and immediately starts `agy` in your current terminal session. Any arguments following `--` are forwarded to `agy`. Upon exit, any refreshed tokens are persisted back to the profile vault.
 
-Rule of thumb: `use` to change the default account, `run` to start a session now.
+Recommendation: use `use` to configure your default background profile, and use `run` when starting an interactive coding session immediately.
 
-## Commands
+## Command Reference
 
-| Command | What it does |
+| Command | Description | Aliases |
+| --- | --- | --- |
+| `agyp adopt [--label <name>]` | Save the current active `agy` sign-in as a saved profile | `save`, `capture`, `claim` |
+| `agyp login [--label <name>]` | Clear active credential, launch `agy` to sign in, and capture result | `add`, `signin`, `auth` |
+| `agyp list [--json]` | List saved profiles with status indicator on the active account | `ls`, `show`, `all` |
+| `agyp use <target>` | Set a saved profile as the active account for `agy` | `switch`, `select`, `set` |
+| `agyp run [target] [-- args]` | Switch profile and launch `agy`; passes trailing arguments to `agy` | `start`, `exec`, `launch` |
+| `agyp auto` | Automatically select and switch to the healthiest profile with maximum quota | `best`, `pick` |
+| `agyp autorun [-- args]` | Automatically select healthiest profile and launch `agy` immediately | `auto-run` |
+| `agyp usage [target] [--all]` | Display model quota and prompt credits (defaults to all profiles) | `quota`, `credits`, `limits` |
+| `agyp plan` / `agyp stats` | Aggregate usage statistics, subscription tiers, and combined credits | `statistics`, `metrics` |
+| `agyp update [--check]` | Update the `agy` CLI and report model lineup modifications | `upgrade`, `sync-models` |
+| `agyp status [--json]` | Show current authentication state, token expiration, and vault status | `info`, `st`, `whoami` |
+| `agyp label <target> [name]` | Set, update, or clear (`--clear`) a profile's friendly label | `rename`, `tag`, `alias` |
+| `agyp remove <target>` | Delete a profile and remove its credentials from the vault | `rm`, `delete`, `del`, `unlink` |
+| `agyp doctor` | Run health checks on keyring, binary location, and storage backends | `check`, `health` |
+| `agyp spinner [seconds]` | Run interactive terminal loading spinner diagnostic demo | `spin`, `loading` |
+
+### Target Resolution
+
+A `<target>` argument specifies a profile using any of the following formats:
+- Email address (e.g. `alex.work@gmail.com`)
+- Friendly label (e.g. `work`)
+- List number (e.g. `1` or `2`)
+- Unique email prefix (e.g. `alex.work`)
+
+Labels cannot consist entirely of numbers, as numeric arguments resolve to list positions.
+
+### Options
+
+- `--json`: Outputs structured JSON data for `list`, `usage`, `status`, and `stats`.
+- `--models`: Displays detailed individual model breakdown alongside quota groups in `usage`.
+- `--force`: Proceeds with profile switching or updating even if an `agy` process is running.
+- `--default-browser`: Bypasses Chrome guest mode and opens authentication in your default system browser.
+
+## Operational Architecture
+
+### Browser Isolation During Sign-In
+
+`agy` initiates authentication through standard Google web flows. Under normal browser settings, this flow automatically selects whichever account is currently signed in to your primary browser profile. `agyp login` (and re-authentication during `agyp run`) routes sign-in requests through a temporary Chrome guest window (`--guest`). This ensures cookies and active sessions remain completely isolated. If Google Chrome or Chromium is unavailable, `agyp` falls back to the system default browser.
+
+### Credential Synchronization and Safety
+
+When `agy` runs, it refreshes access tokens and writes updates directly to the OS keyring. To ensure refreshed credentials are never lost, `agyp` performs an automatic sync-back step before every profile switch and after every `agyp run`. Rather than assuming active credentials belong to the recorded active profile, `agyp` verifies token fingerprints and queries Google identity services directly when needed, preventing account corruption.
+
+### Process Concurrency Gating
+
+Because an active `agy` session periodically rewrites its keyring entry upon token refresh, modifying credentials while `agy` is running would allow the existing process to overwrite the newly activated profile. `agyp` inspects running system processes and prevents switching while `agy` is active. Use `--force` if you intentionally wish to bypass this check.
+
+### Quota Resolution and Grouping
+
+`agyp usage` communicates with Google Cloud Code endpoints concurrently using each profile's individual refresh token. Quotas are pooled into shared capacity groups (such as Gemini models and third-party Claude/GPT models) with weekly and five-hour rolling windows. If Google omits remaining capacity indicators for a pool, `agyp` displays `n/a` to preserve accuracy.
+
+### Dynamic Model Catalog Tracking
+
+Model availability and names evolve over time. `agyp` hardcodes no model identifiers or display names; it parses API catalog responses dynamically. To keep changes transparent, `agyp` stores the last observed catalog state in `~/.agy-profiler/models.json` and reports detected additions, renames, and retirements after running `agyp update`.
+
+## Storage Architecture
+
+| Data Item | Storage Location |
 | --- | --- |
-| `agyp adopt [--label <name>]` | Save whatever account `agy` is signed into right now as a profile (aliases: `save`, `capture`) |
-| `agyp login [--label <name>]` | Add an account: clears `agy`'s credential, runs `agy` so you can sign in (in a Chrome guest window), captures the result (aliases: `add`, `signin`) |
-| `agyp list` | Profiles, with a `●` on the one `agy` is using (aliases: `ls`, `show`, `all`) |
-| `agyp use <target>` | Make a profile the active account (aliases: `switch`, `select`, `set`) |
-| `agyp run [target] [-- args]` | Switch (if a target is given) and launch `agy`; anything after `--` is passed to `agy` (aliases: `start`, `exec`) |
-| `agyp auto` | Auto-select and switch to the healthiest profile with maximum quota (aliases: `best`, `pick`) |
-| `agyp autorun [-- args]` | Auto-select healthiest profile and launch `agy` immediately (aliases: `auto-run`) |
-| `agyp usage [target]` | Model quota and reset timers. No target = every profile (aliases: `quota`, `credits`) |
-| `agyp plan` | Aggregate plan statistics, combined prompt credits, model quota pools, and recommended account (aliases: `stats`, `statistics`) |
-| `agyp update [--check]` | Update the `agy` CLI, then report which models were added, renamed or removed (aliases: `upgrade`) |
-| `agyp status` | What `agy` is authenticated as, and whether it matches a saved profile (aliases: `info`, `st`, `whoami`) |
-| `agyp label <target> [name]` | Set, update (e.g. `agyp label 1 hello`, alias: `rename`, `tag`), or remove (`--clear`) a profile's label |
-| `agyp remove <target>` | Forget a profile and delete its tokens from the keyring (aliases: `rm`, `delete`, `del`) |
-| `agyp doctor` | Keyring backend, `agy` binary, vault health (aliases: `check`, `health`) |
+| Profile tokens | OS keyring (service `agy-profiler`), or file fallback in `~/.agy-profiler/secrets/` (0600) |
+| Profile metadata | `~/.agy-profiler/profiles.json` (0600) |
+| Model catalog cache | `~/.agy-profiler/models.json` (0600) |
+| Live `agy` credential | OS keyring (`gemini:antigravity`), or `~/.gemini/antigravity-cli/antigravity-oauth-token` |
 
-A **target** is an email, a list number, a label, or an unambiguous email prefix —
-`agyp use 2`, `agyp use work`, and `agyp use you.work@gmail.com` are the same thing.
-Labels cannot be numbers only (e.g. `"123"` is rejected because numbers resolve to list positions).
+Set the `AGYP_HOME` environment variable to override the default profile directory (`~/.agy-profiler`).
 
-`--json` works on `list`, `usage`, and `status`. Pass `--models` to `usage` to show the full per-model breakdown
-mapped to their quota pools.
-
-## Things worth knowing
-
-**Sign-in happens in a Chrome guest window.** `agy`'s login is an ordinary Google
-web session, so in your normal browser it would pick up whichever account is
-already signed in there — and leave the new one signed in afterwards. `agyp login`
-(and `agyp run`, if `agy` asks you to re-authenticate) sends that page to a Chrome
-guest window instead: no shared cookies in either direction, nothing left behind
-when you close it. Chromium counts (`chromium` / `chromium-browser` on Linux —
-`--guest` is a Chromium flag). Pass `--default-browser` to opt out, which is also
-what happens automatically when no Chrome/Chromium is found.
-
-**Quota with no target means every account.** `agyp usage` shows all profiles;
-name one (`agyp usage work`) to narrow it.
-
-**Re-authentication is contained.** If `agy` makes you sign in again, that only
-touches the profile you are on. Before every switch, `agyp` writes the live
-credential back into the profile that owns it, so refreshed (or re-issued) tokens
-are never lost — and it identifies the token with Google rather than assuming,
-so a mid-session `/login` as a *different* account can't overwrite the wrong
-profile.
-
-**Switching is blocked while `agy` runs.** A running `agy` rewrites its credential
-whenever the token refreshes, which would overwrite whatever you just switched to.
-Close it, or pass `--force` if you know what you are doing.
-
-**Quota needs no switching.** `agyp usage` talks to Google directly with each
-profile's own token. Nothing about your live session changes.
-
-**`n/a` in the quota column is honest.** Google omits the remaining-fraction field
-for pools it has nothing to report on. `agyp` shows `n/a` instead of guessing
-100%. The reset timer is still accurate.
-
-**Model renames never break anything.** No model name is hardcoded anywhere —
-`usage` shows whatever the API returns, so models that appear, disappear or get
-renamed flow through with no code change. `agyp update` exists to make that
-visible rather than silent:
-
-```
-$ agyp update
-agy 1.1.11 — running `agy update`
-updated agy 1.1.11 -> 1.2.0
-
-model changes:
-  + new    Gemini 4 Flash (gemini-4-flash)
-  ~ renamed Gemini 3.1 Pro (High) -> Gemini 3.5 Pro (High) (gemini-3.1-pro-high)
-  - gone   GPT-OSS 120B (Medium) (gpt-oss-120b-medium)
-```
-
-Renames are detected by model **id**, not display name, so a rebrand shows up as
-a rename rather than as one model vanishing and another appearing. `agyp usage`
-also notices drift and points you at `agyp update --check`.
-
-**Only auth is per-profile.** Settings, history, skills, plugins, MCP servers and
-trusted workspaces live in `~/.gemini/` and are shared by every profile — which is
-almost always what you want.
-
-## Where things are stored
-
-| What | Where |
-| --- | --- |
-| Profile tokens | OS keyring (service `agy-profiler`), or secure fallback in `~/.agy-profiler/secrets/` (0600) |
-| Profile metadata (no secrets) | `~/.agy-profiler/profiles.json` |
-| Last-seen model catalog | `~/.agy-profiler/models.json` |
-| `agy`'s live credential | OS keyring (`gemini:antigravity`), or `~/.gemini/antigravity-cli/antigravity-oauth-token` |
-
-`AGYP_HOME` overrides the vault metadata and fallback secrets directory.
+Settings, prompt history, skills, plugins, and workspace configuration reside in `~/.gemini/` and remain shared across all profiles.
 
 ## Development
 
 ```bash
+# Type check TypeScript source
 npm run typecheck
+
+# Execute unit test suite
 npm test
+
+# Build distribution bundle
 npm run build
 ```
 
-See [ARCHITECTURE.md](ARCHITECTURE.md) for how it works and where to extend it.
+For complete technical specifications and internal mechanics, refer to [ARCHITECTURE.md](ARCHITECTURE.md).
 
 ## License
 
-MIT. Not affiliated with or endorsed by Google. `agyp` talks to the same
-endpoints the Antigravity CLI uses; they are undocumented and may change.
+MIT. This project is not affiliated with or endorsed by Google. `agyp` interfaces with internal Antigravity CLI service endpoints.

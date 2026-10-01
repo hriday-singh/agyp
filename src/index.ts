@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * agyp — multi-account profile manager for the Antigravity (`agy`) CLI.
+ * agyp: multi-account profile manager for the Antigravity (`agy`) CLI.
  *
  * See ARCHITECTURE.md for why this works the way it does. The short version:
  * `agy` keeps exactly one credential in the OS keyring, so a profile switch is
@@ -56,8 +56,8 @@ function info(message: string): void {
  * refreshes (and mid-session re-logins) are never lost when we switch away.
  *
  * The fingerprint is the fast path. When it does not match anything we ask
- * Google who this token belongs to rather than guessing — guessing is how one
- * account's token ends up saved under another account's profile.
+ * Google who this token belongs to rather than guessing. Guessing could cause one
+ * account's token to be saved under another account's profile.
  */
 async function syncBack(index: VaultIndex): Promise<VaultIndex> {
   const raw = agy.readLiveRaw();
@@ -88,7 +88,7 @@ async function syncBack(index: VaultIndex): Promise<VaultIndex> {
 
   const known = index.profiles.find((p) => p.email === email);
   if (!known) {
-    warn(`agy is signed in as ${email}, which is not a saved profile — run \`agyp adopt\` to keep it`);
+    warn(`agy is signed in as ${email}, which is not a saved profile. Run \`agyp adopt\` to save it.`);
     return index;
   }
   setSecret(email, raw);
@@ -123,7 +123,7 @@ async function identify(raw: string): Promise<{ email: string; projectId?: strin
 
 async function cmdAdopt(label: string | undefined): Promise<void> {
   const raw = agy.readLiveRaw();
-  if (!raw) throw new UserError('agy is not signed in to anything — run `agyp login` instead');
+  if (!raw) throw new UserError('agy is not signed in to an account. Run `agyp login` instead.');
 
   const stop = spinner('identifying account');
   let email: string;
@@ -157,7 +157,7 @@ function browserEnv(useDefault: boolean): NodeJS.ProcessEnv | undefined {
   if (useDefault) return undefined;
   const env = guestBrowserEnv();
   if (!env) {
-    warn('Chrome not found — sign-in will open in your default browser');
+    warn('Chrome was not found; sign-in will open in your default browser.');
     return undefined;
   }
   info('Sign-in opens in a Chrome guest window (isolated from your normal profile).');
@@ -244,7 +244,7 @@ function cmdList(json: boolean): void {
     return;
   }
   if (index.profiles.length === 0) {
-    console.log(dim('no profiles yet — `agyp adopt` to save the account you are signed into, `agyp login` to add one'));
+    console.log(dim('no profiles configured yet. Run `agyp adopt` to save your current account, or `agyp login` to add one.'));
     return;
   }
   index.profiles.forEach((profile, i) => {
@@ -253,7 +253,7 @@ function cmdList(json: boolean): void {
     const used = profile.lastUsed ? dim(`  last used ${profile.lastUsed.slice(0, 10)}`) : '';
     console.log(`${marker} ${String(i + 1).padStart(2)}. ${profile.email.padEnd(30)}${label}${used}`);
   });
-  if (!active) warn('agy is not signed in as any saved profile — `agyp use <target>` or `agyp adopt`');
+  if (!active) warn('agy is not signed in as any saved profile. Run `agyp use <target>` or `agyp adopt`.');
 }
 
 async function cmdUse(target: string, force: boolean): Promise<void> {
@@ -292,7 +292,7 @@ async function cmdRun(
   }
 
   // If agy decides it needs a fresh sign-in mid-session, that page gets the same
-  // guest window as `login` — same reason.
+  // guest window as `login` for the same reason.
   const code = agy.launchAgy(agyArgs, defaultBrowser ? undefined : (guestBrowserEnv() ?? undefined));
   // agy refreshes (or replaces) its token while running; capture that before exit.
   const stopBack = spinner('syncing profile updates');
@@ -308,7 +308,7 @@ async function resolveHealthiestProfile(
   index: VaultIndex,
 ): Promise<{ profile: ProfileMeta; healthiest: HealthiestProfileResult }> {
   if (index.profiles.length === 0) {
-    throw new UserError('no profiles yet — run `agyp adopt` or `agyp login`');
+    throw new UserError('no profiles found. Run `agyp adopt` or `agyp login`.');
   }
 
   const stop = spinner('checking accounts for healthiest quota');
@@ -323,7 +323,7 @@ async function resolveHealthiestProfile(
   });
 
   if (validSnapshots.length === 0) {
-    throw new UserError('failed to fetch quota for any profile — check network connectivity');
+    throw new UserError('failed to fetch quota for any profile. Check network connectivity.');
   }
 
   const active = activeEmail(index);
@@ -381,7 +381,7 @@ async function cmdAutoRun(
 
 async function cmdUsage(target: string | undefined, json: boolean, showModels = false): Promise<void> {
   let index = loadIndex();
-  if (index.profiles.length === 0) throw new UserError('no profiles yet — run `agyp adopt` or `agyp login`');
+  if (index.profiles.length === 0) throw new UserError('no profiles found. Run `agyp adopt` or `agyp login`.');
 
   // No target means every profile: the usual question is "how much is left across
   // my accounts", not "how much is left on the one agy happens to hold".
@@ -409,7 +409,7 @@ async function cmdUsage(target: string | undefined, json: boolean, showModels = 
     if (!json) {
       console.log(renderSnapshot(result.value.snapshot, showModels) + '\n');
       if (changed) {
-        info(`  model lineup changed since the last check — \`agyp update --check\` for details\n`);
+        info(`  model lineup changed since the last check. Run \`agyp update --check\` for details.\n`);
       }
     }
   });
@@ -420,7 +420,7 @@ async function cmdUsage(target: string | undefined, json: boolean, showModels = 
 
 /**
  * Update agy, then say what moved. The quota view adapts to renames and removals
- * on its own — this exists so the change is visible instead of silent.
+ * on its own; this command ensures model modifications are visible rather than silent.
  */
 async function cmdUpdate(checkOnly: boolean, force: boolean): Promise<void> {
   const index = loadIndex();
@@ -428,16 +428,16 @@ async function cmdUpdate(checkOnly: boolean, force: boolean): Promise<void> {
 
   if (!checkOnly) {
     if (agy.agyRunning() && !force) {
-      throw new UserError('agy is running — close it before updating, or pass --force');
+      throw new UserError('agy is running. Close it before updating, or pass --force.');
     }
     const before = agy.agyVersion();
     if (agy.agyUpdating()) {
-      // ponytail: fixed 1s poll, 5 min ceiling — agy exposes no progress to hook into
-      const stopWait = spinner('agy is already updating itself in the background — waiting');
+      // fixed 1s poll with a 5-minute ceiling; agy exposes no progress hook.
+      const stopWait = spinner('agy is already updating itself in the background; waiting');
       const deadline = Date.now() + 5 * 60_000;
       try {
         while (agy.agyUpdating()) {
-          if (Date.now() > deadline) throw new UserError('agy background update still running after 5 min — try again later');
+          if (Date.now() > deadline) throw new UserError('agy background update is still running after 5 minutes. Please try again later.');
           await new Promise((r) => setTimeout(r, 1000));
         }
       } finally {
@@ -469,13 +469,13 @@ async function cmdUpdate(checkOnly: boolean, force: boolean): Promise<void> {
     const tint = line.startsWith('+') ? green : line.startsWith('-') ? red : yellow;
     console.log('  ' + tint(line));
   }
-  console.log(dim('\nnothing to change on your side — quota tracks whatever the API reports.'));
+  console.log(dim('\nNo action needed; quota tracks whatever the API reports.'));
 }
 
 function pickDefault(index: VaultIndex): ProfileMeta {
   const active = activeEmail(index);
   const chosen = index.profiles.find((p) => p.email === active) ?? index.profiles[0];
-  if (!chosen) throw new UserError('no profiles yet — run `agyp adopt` or `agyp login`');
+  if (!chosen) throw new UserError('no profiles found. Run `agyp adopt` or `agyp login`.');
   return chosen;
 }
 
@@ -518,7 +518,7 @@ async function cmdStatus(json: boolean): Promise<void> {
   } else if (active) {
     console.log(`agy: ${green('signed in')} as ${bold(active)}`);
   } else {
-    console.log(`agy: ${yellow('signed in')} as ${bold(unknownEmail ?? 'an unrecognised account')} ${dim('(not a saved profile — `agyp adopt`)')}`);
+    console.log(`agy: ${yellow('signed in')} as ${bold(unknownEmail ?? 'an unrecognised account')} ${dim('(not a saved profile; run `agyp adopt`)')}`);
   }
   if (expiry) {
     const ms = new Date(expiry).getTime() - Date.now();
@@ -602,13 +602,13 @@ function cmdDoctor(): void {
     line(true, `vault: ${index.profiles.length} profile(s) at ${indexPath()}`);
     const orphans = index.profiles.filter((p) => !getSecret(p.email));
     if (orphans.length > 0) {
-      line(false, `keyring entries missing for: ${orphans.map((o) => o.email).join(', ')} — re-run \`agyp login\``);
+      line(false, `keyring entries missing for: ${orphans.map((o) => o.email).join(', ')}. Run \`agyp login\` to re-add.`);
     }
   } catch (err) {
     line(false, err instanceof Error ? err.message : String(err));
   }
 
-  line(!agy.agyRunning(), agy.agyRunning() ? 'agy is running — switching is blocked' : 'agy is not running');
+  line(!agy.agyRunning(), agy.agyRunning() ? 'agy is running: switching is blocked' : 'agy is not running');
   if (backend.ok) {
     console.log(dim(`  secrets stored under keyring service "${VAULT_SERVICE}"`));
   } else {
@@ -687,7 +687,7 @@ async function main(): Promise<void> {
     default: {
       const bestMatch = findBestMatch(command, ALL_COMMAND_NAMES);
       const suggestion = formatSuggestion(command, bestMatch);
-      throw new UserError(`unknown command "${command}"${suggestion} — try \`agyp help\``);
+      throw new UserError(`unknown command "${command}"${suggestion}. Run \`agyp help\` to view commands.`);
     }
   }
 }

@@ -1,11 +1,11 @@
 /**
- * Google Cloud Code API — the same endpoints Antigravity itself uses for quota.
+ * Google Cloud Code API: the same endpoints Antigravity itself uses for quota.
  *
  * A profile's refresh token is enough to read that account's quota, so `agyp
  * usage --all` never has to touch the live `agy` credential or switch accounts.
  *
  * The OAuth client is Antigravity's own public desktop client. Its "secret" is
- * not a secret — it ships inside every agy binary — so we read it from the
+ * not a secret (it ships inside every agy binary), so we read it from the
  * installed binary instead of committing it here. Override with
  * ANTIGRAVITY_OAUTH_CLIENT_ID / _SECRET if Google ever rotates it.
  */
@@ -29,11 +29,11 @@ export const CLOUDCODE = {
 
 export interface ModelQuota {
   label: string;
-  /** Every model id that shares this label — they share one quota pool. */
+  /** Every model id that shares this label; they share one quota pool. */
   modelIds: string[];
   /**
    * Fraction of the pool left. Undefined when the API omits it, which it does
-   * for pools it has nothing to report on — shown as "n/a" rather than guessed.
+   * for pools it has nothing to report on; shown as "n/a" rather than guessed.
    */
   remainingPercentage?: number;
   isExhausted: boolean;
@@ -92,7 +92,7 @@ function clientSecrets(): string[] {
     cachedSecrets = bin ? secretsInBinary(readFileSync(bin)) : [];
   }
   if (!cachedSecrets.length) {
-    throw new Error('could not find the OAuth client in the agy binary — install agy or set ANTIGRAVITY_OAUTH_CLIENT_SECRET');
+    throw new Error('could not find the OAuth client in the agy binary. Please install agy or set ANTIGRAVITY_OAUTH_CLIENT_SECRET.');
   }
   return cachedSecrets;
 }
@@ -120,7 +120,7 @@ export async function refreshAccessToken(refreshToken: string): Promise<string> 
   if (!res.ok) {
     const body = await res.text();
     if (res.status === 400 || res.status === 401) {
-      throw new Error('refresh token rejected — this profile needs `agyp login` again');
+      throw new Error('refresh token rejected; this profile needs `agyp login` again');
     }
     throw new Error(`token refresh failed: ${res.status} ${body.slice(0, 200)}`);
   }

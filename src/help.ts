@@ -2,8 +2,8 @@ import { bold } from './render.js';
 
 export const USE_VS_RUN = `${bold('USE vs RUN')}
   ${bold('use')} only swaps the credential and exits. agy is not started; the next time you
-  start agy yourself — from any terminal, or from the Antigravity editor — it comes
-  up as that account, and stays there until you switch again. It refuses to run
+  start agy yourself (from any terminal or the Antigravity editor), it launches
+  as that account, and stays there until you switch again. It refuses to run
   while agy is open, because a running agy rewrites the credential on token
   refresh and would undo the swap.
 
@@ -15,7 +15,7 @@ export const USE_VS_RUN = `${bold('USE vs RUN')}
   Rule of thumb: ${bold('use')} to change the default account, ${bold('run')} to start a session now.
 `;
 
-export const HELP = `${bold('agyp')} — profile manager for the Antigravity CLI
+export const HELP = `${bold('agyp')}: profile manager for the Antigravity CLI
 
 ${bold('USAGE')}
   agyp <command> [target] [options]
@@ -66,7 +66,7 @@ ${bold('EXAMPLES')}
 `;
 
 export const COMMAND_HELP: Record<string, string> = {
-  adopt: `${bold('agyp adopt')} — Save current agy sign-in as a profile
+  adopt: `${bold('agyp adopt')} - Save current agy sign-in as a profile
 
 ${bold('USAGE')}
   agyp adopt [--label <name>]
@@ -79,7 +79,7 @@ ${bold('OPTIONS')}
   --label <name>    Set a friendly label for the captured profile.
 `,
 
-  login: `${bold('agyp login')} — Add a new account profile
+  login: `${bold('agyp login')} - Add a new account profile
 
 ${bold('USAGE')}
   agyp login [--label <name>] [--force] [--default-browser] [-- <agy args>]
@@ -97,7 +97,7 @@ ${bold('OPTIONS')}
   --default-browser   Open sign-in in your default system browser instead of Chrome guest window.
 `,
 
-  list: `${bold('agyp list')} — List all saved profiles
+  list: `${bold('agyp list')} - List all saved profiles
 
 ${bold('USAGE')}
   agyp list [--json]
@@ -111,7 +111,7 @@ ${bold('OPTIONS')}
   --json    Output machine-readable JSON format.
 `,
 
-  use: `${bold('agyp use')} — Switch agy's active account profile
+  use: `${bold('agyp use')} - Switch agy's active account profile
 
 ${bold('USAGE')}
   agyp use <target> [--force]
@@ -123,7 +123,7 @@ ${bold('DESCRIPTION')}
 
 ${USE_VS_RUN}`,
 
-  run: `${bold('agyp run')} — Switch profile and launch agy CLI
+  run: `${bold('agyp run')} - Switch profile and launch agy CLI
 
 ${bold('USAGE')}
   agyp run [target] [--force] [--default-browser] [-- <agy args>]
@@ -135,7 +135,7 @@ ${bold('DESCRIPTION')}
 
 ${USE_VS_RUN}`,
 
-  auto: `${bold('agyp auto')} — Automatically select and switch to the healthiest profile
+  auto: `${bold('agyp auto')} - Automatically select and switch to the healthiest profile
 
 ${bold('USAGE')}
   agyp auto [--force]
@@ -147,7 +147,7 @@ ${bold('DESCRIPTION')}
   models and highest remaining capacity), and activates the best profile.
 `,
 
-  autorun: `${bold('agyp autorun')} — Auto-select healthiest profile and launch agy
+  autorun: `${bold('agyp autorun')} - Auto-select healthiest profile and launch agy
 
 ${bold('USAGE')}
   agyp autorun [--force] [--default-browser] [-- <agy args>]
@@ -159,7 +159,7 @@ ${bold('DESCRIPTION')}
   the agy CLI attached to your terminal.
 `,
 
-  usage: `${bold('agyp usage')} — View model quota and prompt credits
+  usage: `${bold('agyp usage')} - View model quota and prompt credits
 
 ${bold('USAGE')}
   agyp usage [target] [--all] [--json]
@@ -175,7 +175,7 @@ ${bold('OPTIONS')}
   --json    Output machine-readable JSON snapshot format.
 `,
 
-  update: `${bold('agyp update')} — Update agy CLI and check model lineup changes
+  update: `${bold('agyp update')} - Update agy CLI and check model lineup changes
 
 ${bold('USAGE')}
   agyp update [--check] [--force]
@@ -188,7 +188,7 @@ ${bold('OPTIONS')}
   --force    Proceed even if agy is currently running.
 `,
 
-  status: `${bold('agyp status')} — Show active profile and sync status
+  status: `${bold('agyp status')} - Show active profile and sync status
 
 ${bold('USAGE')}
   agyp status [--json]
@@ -201,7 +201,7 @@ ${bold('OPTIONS')}
   --json    Output machine-readable JSON status format.
 `,
 
-  label: `${bold('agyp label')} — Set, rename, or clear a profile's label
+  label: `${bold('agyp label')} - Set, rename, or clear a profile's label
 
 ${bold('USAGE')}
   agyp label <target> [new-label] [--clear]
@@ -216,7 +216,7 @@ ${bold('OPTIONS')}
   --clear    Remove the label from the specified profile.
 `,
 
-  remove: `${bold('agyp remove')} — Delete a profile and its stored credentials
+  remove: `${bold('agyp remove')} - Delete a profile and its stored credentials
 
 ${bold('USAGE')}
   agyp remove <target>
@@ -226,7 +226,7 @@ ${bold('DESCRIPTION')}
   Deletes a profile from the vault index and removes its credentials from the system keyring.
 `,
 
-  doctor: `${bold('agyp doctor')} — Check system health and backend diagnostics
+  doctor: `${bold('agyp doctor')} - Check system health and backend diagnostics
 
 ${bold('USAGE')}
   agyp doctor
@@ -236,7 +236,7 @@ ${bold('DESCRIPTION')}
   Node.js version requirements, vault index integrity, and process state.
 `,
 
-  stats: `${bold('agyp stats')} — View model quota, prompt credits, and plan statistics
+  stats: `${bold('agyp stats')} - View model quota, prompt credits, and plan statistics
 
 ${bold('USAGE')}
   agyp stats [--json] [--reset]
@@ -252,8 +252,7 @@ ${bold('OPTIONS')}
   --reset    Clear cached usage statistics.
 `,
 
-
-  spinner: `${bold('agyp spinner')} — Show interactive loading spinner demo
+  spinner: `${bold('agyp spinner')} - Show interactive loading spinner demo
 
 ${bold('USAGE')}
   agyp spinner [seconds]
@@ -264,4 +263,3 @@ ${bold('DESCRIPTION')}
   switching between random status messages every 3 seconds.
 `,
 };
-

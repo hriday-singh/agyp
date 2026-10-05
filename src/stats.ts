@@ -84,6 +84,8 @@ export interface HealthiestProfileResult {
   exhaustedCount: number;
   totalModels: number;
   score: number;
+  geminiAvgQuotaPercentage?: number;
+  claudeAvgQuotaPercentage?: number;
 }
 
 export function rankProfileHealth(snapshot: Snapshot): HealthiestProfileResult {
@@ -91,18 +93,47 @@ export function rankProfileHealth(snapshot: Snapshot): HealthiestProfileResult {
   let profileQuotaCount = 0;
   let exhaustedCount = 0;
 
+  let geminiSum = 0;
+  let geminiCount = 0;
+  let geminiExhausted = 0;
+
+  let claudeSum = 0;
+  let claudeCount = 0;
+  let claudeExhausted = 0;
+
   for (const m of snapshot.models) {
-    if (m.isExhausted || m.remainingPercentage === 0) {
+    const isExhausted = Boolean(m.isExhausted || m.remainingPercentage === 0);
+    if (isExhausted) {
       exhaustedCount += 1;
     }
-    const frac = m.remainingPercentage ?? (m.isExhausted ? 0 : 1);
+    const frac = m.remainingPercentage ?? (isExhausted ? 0 : 1);
     profileQuotaSum += frac;
     profileQuotaCount += 1;
+
+    const text = (m.label + ' ' + (m.modelIds || []).join(' ') + ' ' + (m.groupName || '')).toLowerCase();
+    if (text.includes('gemini')) {
+      geminiSum += frac;
+      geminiCount += 1;
+      if (isExhausted) geminiExhausted += 1;
+    } else if (text.includes('claude')) {
+      claudeSum += frac;
+      claudeCount += 1;
+      if (isExhausted) claudeExhausted += 1;
+    }
   }
 
   const avgQuota = profileQuotaCount > 0 ? profileQuotaSum / profileQuotaCount : 1;
-  // Penalty of -1000 per exhausted model so non-exhausted accounts always beat accounts with exhausted models
-  const score = avgQuota * 100 - exhaustedCount * 1000;
+  const geminiAvg = geminiCount > 0 ? geminiSum / geminiCount : avgQuota;
+  const claudeAvg = claudeCount > 0 ? claudeSum / claudeCount : avgQuota;
+
+  // The best profile is prioritized by:
+  // 1. Highest Gemini current quota & fewest exhausted Gemini models (weight: 10,000, penalty: -50,000)
+  // 2. Highest Claude current quota & fewest exhausted Claude models (weight: 100, penalty: -500)
+  // 3. Highest overall average quota & overall exhaustion (weight: 1, penalty: -10)
+  const score =
+    (geminiAvg * 10000 - geminiExhausted * 50000) +
+    (claudeAvg * 100 - claudeExhausted * 500) +
+    (avgQuota * 1 - exhaustedCount * 10);
 
   return {
     email: snapshot.email,
@@ -110,6 +141,8 @@ export function rankProfileHealth(snapshot: Snapshot): HealthiestProfileResult {
     exhaustedCount,
     totalModels: snapshot.models.length,
     score,
+    geminiAvgQuotaPercentage: geminiCount > 0 ? Math.round(geminiAvg * 100) : undefined,
+    claudeAvgQuotaPercentage: claudeCount > 0 ? Math.round(claudeAvg * 100) : undefined,
   };
 }
 

@@ -71,6 +71,7 @@ agyp adopt --label personal
 
 # Add a second account (authenticates through an isolated guest window)
 agyp login --label work
+# Or specify label positionally (e.g. agyp login work or agyp work login)
 
 # View all saved profiles and inspect the active account
 agyp list
@@ -80,6 +81,12 @@ agyp use work
 
 # Switch to a profile and launch agy immediately
 agyp run personal
+
+# Automatically switch to the best account (highest Gemini quota, then Claude)
+agyp best
+
+# Or switch to the best account and launch agy immediately
+agyp run best
 
 # Check model quota across all accounts
 agyp usage
@@ -103,13 +110,13 @@ Recommendation: use `use` to configure your default background profile, and use 
 
 | Command | Description | Aliases |
 | --- | --- | --- |
-| `agyp adopt [--label <name>]` | Save the current active `agy` sign-in as a saved profile | `save`, `capture`, `claim` |
-| `agyp login [--label <name>]` | Clear active credential, launch `agy` to sign in, and capture result | `add`, `signin`, `auth` |
+| `agyp adopt [label] [--label <name>]` | Save the current active `agy` sign-in as a saved profile | `save`, `capture`, `claim` |
+| `agyp login [label] [--label <name>] [-d]` | Clear active credential, launch `agy` to sign in, and capture result | `add`, `signin`, `auth` |
 | `agyp list [--json]` | List saved profiles with status indicator on the active account | `ls`, `show`, `all` |
 | `agyp use <target>` | Set a saved profile as the active account for `agy` | `switch`, `select`, `set` |
 | `agyp run [target] [-- args]` | Switch profile and launch `agy`; passes trailing arguments to `agy` | `start`, `exec`, `launch` |
-| `agyp auto` | Automatically select and switch to the healthiest profile with maximum quota | `best`, `pick` |
-| `agyp autorun [-- args]` | Automatically select healthiest profile and launch `agy` immediately | `auto-run` |
+| `agyp best` / `agyp auto` | Select and switch to best profile (highest Gemini quota, then Claude) | `auto`, `pick` |
+| `agyp run best` / `agyp autorun` | Auto-select best profile and launch `agy` immediately | `auto-run` |
 | `agyp usage [target] [--all]` | Display model quota and prompt credits (defaults to all profiles) | `quota`, `credits`, `limits` |
 | `agyp plan` / `agyp stats` | Aggregate usage statistics, subscription tiers, and combined credits | `statistics`, `metrics` |
 | `agyp update [--check]` | Update the `agy` CLI and report model lineup modifications | `upgrade`, `sync-models` |

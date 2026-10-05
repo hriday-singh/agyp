@@ -215,9 +215,10 @@ async function cmdLogin(
   const validLabel = label ? validateLabel(label, email, index) : undefined;
   const existing = index.profiles.find((p) => p.email === email);
   setSecret(email, fresh);
+  const finalLabel = validLabel ?? existing?.label;
   index = upsert(index, {
     email,
-    label: validLabel ?? existing?.label,
+    label: finalLabel,
     fingerprint: fingerprint(agy.parseBlob(fresh).token.refresh_token),
     projectId: existing?.projectId,
     addedAt: existing?.addedAt ?? now(),
@@ -225,7 +226,7 @@ async function cmdLogin(
   });
   saveIndex({ ...index, active: email });
   delSecret(PENDING_ACCOUNT);
-  console.log(`${green(existing ? 're-authenticated' : 'added')} ${bold(email)}`);
+  console.log(`${green(existing ? 're-authenticated' : 'added')} ${bold(email)}${finalLabel ? dim(` (${finalLabel})`) : ''}`);
 }
 
 function cmdList(json: boolean): void {
@@ -649,23 +650,19 @@ async function main(): Promise<void> {
     case 'list':
       return cmdList(json);
     case 'use':
-      if (flags.has('auto') || target === 'auto' || target === 'best') {
-        return cmdAutoUse(force);
-      }
+      if (flags.has('auto') || flags.has('best') || target === 'auto' || target === 'best') return cmdAutoUse(force);
       if (!target) throw new UserError('use: which profile? `agyp list` to see them');
       return cmdUse(target, force);
     case 'run':
-      if (flags.has('auto') || target === 'auto' || target === 'best') {
-        await cmdAutoRun(force, defaultBrowser, passthrough);
-        return;
+      if (flags.has('auto') || flags.has('best') || target === 'auto' || target === 'best') {
+        return cmdAutoRun(force, defaultBrowser, passthrough);
       }
-      await cmdRun(target, force, defaultBrowser, passthrough);
-      return;
+      return cmdRun(target, force, defaultBrowser, passthrough);
     case 'auto':
+      if (target === 'run') return cmdAutoRun(force, defaultBrowser, passthrough);
       return cmdAutoUse(force);
     case 'autorun':
-      await cmdAutoRun(force, defaultBrowser, passthrough);
-      return;
+      return cmdAutoRun(force, defaultBrowser, passthrough);
     case 'usage':
       return cmdUsage(flags.has('all') ? undefined : target, json, flags.has('models'));
     case 'update':

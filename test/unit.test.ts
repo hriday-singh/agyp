@@ -55,6 +55,73 @@ describe('parseArgs', () => {
     expect(parseArgs([]).command).toBe('help');
     expect(parseArgs(['-h']).flags.has('help')).toBe(true);
   });
+
+  it('supports positional label after login (e.g. agyp login pa)', () => {
+    const parsed = parseArgs(['login', 'pa']);
+    expect(parsed.command).toBe('login');
+    expect(parsed.options.get('label')).toBe('pa');
+    expect(parsed.positional).toEqual([]);
+  });
+
+  it('supports positional label before login (e.g. agyp pa login)', () => {
+    const parsed = parseArgs(['pa', 'login']);
+    expect(parsed.command).toBe('login');
+    expect(parsed.options.get('label')).toBe('pa');
+    expect(parsed.positional).toEqual([]);
+  });
+
+  it('supports positional label with flags and passthrough for login', () => {
+    const p1 = parseArgs(['pa', 'login', '--force', '--default-browser']);
+    expect(p1.command).toBe('login');
+    expect(p1.options.get('label')).toBe('pa');
+    expect(p1.flags.has('force')).toBe(true);
+    expect(p1.flags.has('default-browser')).toBe(true);
+
+    const p2 = parseArgs(['pa', 'login', '--', '--model', 'gemini-3.1-pro']);
+    expect(p2.command).toBe('login');
+    expect(p2.options.get('label')).toBe('pa');
+    expect(p2.passthrough).toEqual(['--model', 'gemini-3.1-pro']);
+  });
+
+  it('supports positional label with login command aliases (e.g. agyp pa add)', () => {
+    const parsed = parseArgs(['pa', 'add']);
+    expect(parsed.command).toBe('add');
+    expect(parsed.options.get('label')).toBe('pa');
+    expect(parsed.positional).toEqual([]);
+  });
+
+  it('supports positional label for adopt (both adopt pa and pa adopt)', () => {
+    const p1 = parseArgs(['adopt', 'pa']);
+    expect(p1.command).toBe('adopt');
+    expect(p1.options.get('label')).toBe('pa');
+
+    const p2 = parseArgs(['pa', 'adopt']);
+    expect(p2.command).toBe('adopt');
+    expect(p2.options.get('label')).toBe('pa');
+
+    const p3 = parseArgs(['pa', 'save']);
+    expect(p3.command).toBe('save');
+    expect(p3.options.get('label')).toBe('pa');
+  });
+
+  it('prioritizes explicit --label over positional label', () => {
+    const p1 = parseArgs(['login', '--label', 'explicit', 'pa']);
+    expect(p1.options.get('label')).toBe('explicit');
+
+    const p2 = parseArgs(['pa', 'login', '--label', 'explicit']);
+    expect(p2.options.get('label')).toBe('explicit');
+  });
+
+  it('does not normalize when the first command is already a known command', () => {
+    const p1 = parseArgs(['help', 'login']);
+    expect(p1.command).toBe('help');
+    expect(p1.positional).toEqual(['login']);
+
+    const p2 = parseArgs(['use', 'pa']);
+    expect(p2.command).toBe('use');
+    expect(p2.positional).toEqual(['pa']);
+    expect(p2.options.get('label')).toBeUndefined();
+  });
 });
 
 const index: VaultIndex = {
@@ -863,6 +930,86 @@ describe('healthiest profile auto-selection', () => {
     const p4 = parseArgs(['autorun', '--', 'start']);
     expect(p4.command).toBe('autorun');
     expect(p4.passthrough).toEqual(['start']);
+
+    const p5 = parseArgs(['best', 'run']);
+    expect(p5.command).toBe('best');
+    expect(p5.positional).toEqual(['run']);
+
+    const p6 = parseArgs(['run', 'best']);
+    expect(p6.command).toBe('run');
+    expect(p6.positional).toEqual(['best']);
+
+    const p7 = parseArgs(['use', 'best']);
+    expect(p7.command).toBe('use');
+    expect(p7.positional).toEqual(['best']);
+
+    const p8 = parseArgs(['run', '--best']);
+    expect(p8.flags.has('best')).toBe(true);
+  });
+
+  it('supports -d and default-browser flag aliases', () => {
+    const p1 = parseArgs(['login', 'clash', '-d']);
+    expect(p1.command).toBe('login');
+    expect(p1.options.get('label')).toBe('clash');
+    expect(p1.flags.has('default-browser')).toBe(true);
+
+    const p2 = parseArgs(['clash', 'login', '-d']);
+    expect(p2.command).toBe('login');
+    expect(p2.options.get('label')).toBe('clash');
+    expect(p2.flags.has('default-browser')).toBe(true);
+
+    const p3 = parseArgs(['login', '--browser']);
+    expect(p3.flags.has('default-browser')).toBe(true);
+
+    const p4 = parseArgs(['login', '--system-browser']);
+    expect(p4.flags.has('default-browser')).toBe(true);
+
+    const p5 = parseArgs(['login', '--no-guest']);
+    expect(p5.flags.has('default-browser')).toBe(true);
+  });
+
+  it('prioritizes Gemini quota first, then Claude quota', () => {
+    const snapshots = [
+      {
+        email: 'higher-claude@gmail.com',
+        models: [
+          { label: 'Gemini 3.1 Pro', modelIds: ['gemini-3.1-pro'], remainingPercentage: 0.7, isExhausted: false },
+          { label: 'Claude 3.7 Sonnet', modelIds: ['claude-3.7-sonnet'], remainingPercentage: 1.0, isExhausted: false },
+        ],
+      },
+      {
+        email: 'higher-gemini@gmail.com',
+        models: [
+          { label: 'Gemini 3.1 Pro', modelIds: ['gemini-3.1-pro'], remainingPercentage: 0.9, isExhausted: false },
+          { label: 'Claude 3.7 Sonnet', modelIds: ['claude-3.7-sonnet'], remainingPercentage: 0.2, isExhausted: false },
+        ],
+      },
+    ];
+
+    const healthiest = findHealthiestProfile(snapshots);
+    expect(healthiest?.email).toBe('higher-gemini@gmail.com');
+  });
+
+  it('breaks ties on Gemini quota using Claude quota', () => {
+    const snapshots = [
+      {
+        email: 'low-claude@gmail.com',
+        models: [
+          { label: 'Gemini 3.1 Pro', modelIds: ['gemini-3.1-pro'], remainingPercentage: 0.8, isExhausted: false },
+          { label: 'Claude 3.7 Sonnet', modelIds: ['claude-3.7-sonnet'], remainingPercentage: 0.3, isExhausted: false },
+        ],
+      },
+      {
+        email: 'high-claude@gmail.com',
+        models: [
+          { label: 'Gemini 3.1 Pro', modelIds: ['gemini-3.1-pro'], remainingPercentage: 0.8, isExhausted: false },
+          { label: 'Claude 3.7 Sonnet', modelIds: ['claude-3.7-sonnet'], remainingPercentage: 0.9, isExhausted: false },
+        ],
+      },
+    ];
+
+    const healthiest = findHealthiestProfile(snapshots);
+    expect(healthiest?.email).toBe('high-claude@gmail.com');
   });
 });
 

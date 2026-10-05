@@ -23,44 +23,48 @@ ${bold('USAGE')}
   A ${bold('target')} is an email, a list number, a label, or an email prefix.
 
 ${bold('COMMANDS')}
-  adopt [--label <name>]     Save current agy login as profile (aliases: save, capture, claim)
-  login [--label <name>]     Add a new account profile (aliases: add, signin, auth)
-  list                       List saved profiles and active one (aliases: ls, show, all)
-  use <target>               Make a profile agy's active account (aliases: switch, select, set)
-  run [target] [-- args]     Switch profile and launch agy CLI (aliases: start, exec, launch)
-  auto                       Auto-select and switch to the healthiest profile (aliases: best, pick)
-  autorun [-- args]          Auto-select healthiest profile and launch agy (aliases: auto-run)
-  usage [target]             Show model quota (aliases: quota, credits, limits)
-  update [--check]           Update agy CLI and check model lineup (aliases: upgrade, sync-models)
-  status                     Show active profile and sync status (aliases: info, st, whoami)
-  label <target> [name]      Set, update, or clear profile label (aliases: rename, tag, alias)
-  remove <target>            Delete a profile (aliases: rm, delete, del, unlink)
-  doctor                     Check system health and diagnostics (aliases: check, health)
-  stats                      Usage & subscription plan statistics across profiles (aliases: plan, statistics, metrics)
-  spinner [seconds]          Show interactive loading spinner demo (aliases: spin, loading)
+  adopt [label] [--label <name>]  Save current agy login as profile (aliases: save, capture, claim)
+  login [label] [--label <name>]  Add a new account profile (aliases: add, signin, auth)
+  list                            List saved profiles and active one (aliases: ls, show, all)
+  use <target>                    Make a profile agy's active account (aliases: switch, select, set)
+  run [target] [-- args]          Switch profile and launch agy CLI (aliases: start, exec, launch)
+  auto                            Auto-select and switch to the healthiest profile (aliases: best, pick)
+  autorun [-- args]               Auto-select healthiest profile and launch agy (aliases: auto-run)
+  usage [target]                  Show model quota (aliases: quota, credits, limits)
+  update [--check]                Update agy CLI and check model lineup (aliases: upgrade, sync-models)
+  status                          Show active profile and sync status (aliases: info, st, whoami)
+  label <target> [name]           Set, update, or clear profile label (aliases: rename, tag, alias)
+  remove <target>                 Delete a profile (aliases: rm, delete, del, unlink)
+  doctor                          Check system health and diagnostics (aliases: check, health)
+  stats                           Usage & subscription plan statistics across profiles (aliases: plan, statistics, metrics)
+  spinner [seconds]               Show interactive loading spinner demo (aliases: spin, loading)
 
 ${USE_VS_RUN}
 ${bold('OPTIONS')}
   --all               usage: every saved profile (the default; kept for habit)
-  --auto              use/run: automatically select the healthiest account
+  --auto, --best      use/run: automatically select the healthiest account
   --models            usage: display detailed per-model breakdown
   --check             update: only report model changes, do not update agy
   --json              usage/list/status: machine-readable output
   --label             adopt/login: a short name you can use as a target
   --clear             label: remove a profile's label
   --force             use/run/login: proceed even if agy appears to be running
-  --default-browser   login/run: sign in in your normal browser instead of a
-                      Chrome guest window
+  -d, --default-browser login/run: sign in in your normal browser instead of a
+                      Chrome guest window (aliases: --browser, --system-browser, --no-guest)
   -h, --help          This text, or \`agyp help <command>\` for command-specific help
 
 ${bold('EXAMPLES')}
   agyp adopt --label personal      # save the account you are already signed into
   agyp login --label work          # add a second account, in a guest Chrome window
+  agyp login pa                    # add an account labeled "pa"
+  agyp pa login                    # alternative syntax for labeling on login
   agyp label 1 hello               # label profile #1 as "hello"
   agyp label work personal         # rename label "work" to "personal"
   agyp label personal --clear      # remove label from personal profile
   agyp usage                       # quota across every account
   agyp usage work                  # quota for one account
+  agyp best                        # switch to account with highest Gemini/Claude quota
+  agyp run best                    # switch to best account and launch agy immediately
   agyp run work                    # launch agy using work profile
   agyp spinner 6                   # run spinner for 6 seconds
 `;
@@ -69,11 +73,12 @@ export const COMMAND_HELP: Record<string, string> = {
   adopt: `${bold('agyp adopt')} - Save current agy sign-in as a profile
 
 ${bold('USAGE')}
-  agyp adopt [--label <name>]
+  agyp adopt [label] [--label <name>]
+  agyp <label> adopt
 
 ${bold('DESCRIPTION')}
   Captures the credential currently used by agy and saves it into the vault as a profile.
-  If --label is provided, the short name can be used as a target in other agyp commands.
+  If a label is provided (either positionally or via --label), the short name can be used as a target in other agyp commands.
 
 ${bold('OPTIONS')}
   --label <name>    Set a friendly label for the captured profile.
@@ -82,19 +87,22 @@ ${bold('OPTIONS')}
   login: `${bold('agyp login')} - Add a new account profile
 
 ${bold('USAGE')}
-  agyp login [--label <name>] [--force] [--default-browser] [-- <agy args>]
+  agyp login [label] [--label <name>] [--force] [-d] [--default-browser] [-- <agy args>]
+  agyp <label> login [--force] [-d] [--default-browser] [-- <agy args>]
 
 ${bold('DESCRIPTION')}
   Clears agy's live credential, launches agy so you can sign in to a new account,
   and captures the result as a new saved profile.
+  A friendly label can be passed directly as a positional argument (e.g. \`agyp login pa\` or \`agyp pa login\`) or via --label.
 
   By default, sign-in opens in an isolated Chrome guest window to avoid interference
   with your default browser profile.
 
 ${bold('OPTIONS')}
-  --label <name>      Set a friendly label for the new profile.
-  --force             Proceed even if agy appears to be currently running.
-  --default-browser   Open sign-in in your default system browser instead of Chrome guest window.
+  --label <name>        Set a friendly label for the new profile.
+  --force               Proceed even if agy appears to be currently running.
+  -d, --default-browser Open sign-in in your default system browser instead of Chrome guest window
+                        (aliases: --browser, --system-browser, --no-guest).
 `,
 
   list: `${bold('agyp list')} - List all saved profiles
@@ -115,19 +123,21 @@ ${bold('OPTIONS')}
 
 ${bold('USAGE')}
   agyp use <target> [--force]
+  agyp use best [--force]
   agyp switch <target> [--force]
 
 ${bold('DESCRIPTION')}
   Swaps agy's live credential with the credential of the specified target profile.
-  Target can be an email, 1-based list index, label, or email prefix.
+  Target can be an email, 1-based list index, label, email prefix, or 'best' to auto-select.
 
 ${USE_VS_RUN}`,
 
   run: `${bold('agyp run')} - Switch profile and launch agy CLI
 
 ${bold('USAGE')}
-  agyp run [target] [--force] [--default-browser] [-- <agy args>]
-  agyp start [target] [--force] [--default-browser] [-- <agy args>]
+  agyp run [target] [--force] [-d] [--default-browser] [-- <agy args>]
+  agyp run best [--force] [-d] [--default-browser] [-- <agy args>]
+  agyp start [target] [--force] [-d] [--default-browser] [-- <agy args>]
 
 ${bold('DESCRIPTION')}
   Switches to the target profile (if specified) and launches agy right in your terminal.
@@ -140,23 +150,26 @@ ${USE_VS_RUN}`,
 ${bold('USAGE')}
   agyp auto [--force]
   agyp best [--force]
+  agyp use best [--force]
   agyp use --auto [--force]
 
 ${bold('DESCRIPTION')}
-  Checks quotas across all saved profiles, ranks them by health (zero/minimal exhausted
-  models and highest remaining capacity), and activates the best profile.
+  Checks quotas across all saved profiles, ranks them by health (prioritizing highest Gemini
+  quota first, then Claude quota), and activates the best profile.
 `,
 
   autorun: `${bold('agyp autorun')} - Auto-select healthiest profile and launch agy
 
 ${bold('USAGE')}
-  agyp autorun [--force] [--default-browser] [-- <agy args>]
-  agyp auto-run [--force] [--default-browser] [-- <agy args>]
-  agyp run --auto [--force] [--default-browser] [-- <agy args>]
+  agyp autorun [--force] [-d] [--default-browser] [-- <agy args>]
+  agyp run best [--force] [-d] [--default-browser] [-- <agy args>]
+  agyp best run [--force] [-d] [--default-browser] [-- <agy args>]
+  agyp auto-run [--force] [-d] [--default-browser] [-- <agy args>]
+  agyp run --auto [--force] [-d] [--default-browser] [-- <agy args>]
 
 ${bold('DESCRIPTION')}
-  Automatically selects and switches to the healthiest profile, then immediately launches
-  the agy CLI attached to your terminal.
+  Automatically selects and switches to the healthiest profile (prioritizing Gemini models
+  first, then Claude), then immediately launches the agy CLI attached to your terminal.
 `,
 
   usage: `${bold('agyp usage')} - View model quota and prompt credits

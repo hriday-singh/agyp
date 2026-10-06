@@ -44,15 +44,36 @@ export function loadUsageCache(): UsageCacheFile {
 }
 
 export function recordUsageSnapshot(snapshot: Snapshot): void {
+  recordUsageSnapshots([snapshot]);
+}
+
+export function recordUsageSnapshots(snapshots: Snapshot[]): void {
+  if (snapshots.length === 0) return;
   const cache = loadUsageCache();
   cache.lastUpdated = new Date().toISOString();
-  cache.snapshots[snapshot.email] = snapshot;
+  for (const snap of snapshots) {
+    cache.snapshots[snap.email] = snap;
+  }
 
   try {
     mkdirSync(vaultDir(), { recursive: true, mode: 0o700 });
     writeFileSync(usageCachePath(), JSON.stringify(cache, null, 2) + '\n', { mode: 0o600 });
   } catch {
     // Non-fatal if cache saving fails
+  }
+}
+
+export function removeUsageSnapshot(email: string): void {
+  const cache = loadUsageCache();
+  if (cache.snapshots[email]) {
+    delete cache.snapshots[email];
+    cache.lastUpdated = new Date().toISOString();
+    try {
+      mkdirSync(vaultDir(), { recursive: true, mode: 0o700 });
+      writeFileSync(usageCachePath(), JSON.stringify(cache, null, 2) + '\n', { mode: 0o600 });
+    } catch {
+      // Non-fatal
+    }
   }
 }
 
@@ -63,6 +84,7 @@ export function clearUsageCache(): void {
     snapshots: {},
   };
   try {
+    mkdirSync(vaultDir(), { recursive: true, mode: 0o700 });
     writeFileSync(usageCachePath(), JSON.stringify(cache, null, 2) + '\n', { mode: 0o600 });
   } catch {
     /* ignore */
@@ -122,7 +144,7 @@ export function rankProfileHealth(snapshot: Snapshot): HealthiestProfileResult {
     }
   }
 
-  const avgQuota = profileQuotaCount > 0 ? profileQuotaSum / profileQuotaCount : 1;
+  const avgQuota = profileQuotaCount > 0 ? profileQuotaSum / profileQuotaCount : 0;
   const geminiAvg = geminiCount > 0 ? geminiSum / geminiCount : avgQuota;
   const claudeAvg = claudeCount > 0 ? claudeSum / claudeCount : avgQuota;
 
@@ -184,10 +206,11 @@ export function calculatePlanStats(snapshots: Snapshot[]): PlanStatistics {
 
     for (const m of snap.models) {
       const entry = modelStats[m.label] || { totalRemainingFrac: 0, count: 0, exhaustedCount: 0 };
-      const frac = m.remainingPercentage ?? (m.isExhausted ? 0 : 1);
+      const isExhausted = Boolean(m.isExhausted || m.remainingPercentage === 0);
+      const frac = m.remainingPercentage ?? (isExhausted ? 0 : 1);
       entry.totalRemainingFrac += frac;
       entry.count += 1;
-      if (m.isExhausted) entry.exhaustedCount += 1;
+      if (isExhausted) entry.exhaustedCount += 1;
       modelStats[m.label] = entry;
     }
   }
@@ -213,7 +236,8 @@ export function cmdStats(json: boolean, reset: boolean): void {
 
   const index = loadIndex();
   const cache = loadUsageCache();
-  const snapshots = Object.values(cache.snapshots);
+  const knownEmails = new Set(index.profiles.map((p) => p.email));
+  const snapshots = Object.values(cache.snapshots).filter((s) => knownEmails.has(s.email));
 
   if (json) {
     const stats = calculatePlanStats(snapshots);
@@ -258,4 +282,10 @@ export function cmdStats(json: boolean, reset: boolean): void {
     console.log(bold('\nRecommended Profile'));
     console.log(`  ${green('●')} ${bold(stats.bestProfileForUse.email)} ${dim(`(${stats.bestProfileForUse.avgQuotaPercentage}% average capacity)`)}`);
   }
+}
+
+export function printActiveProfile(profile: { email: string; label?: string }, healthiest: HealthiestProfileResult): void {
+  const labelStr = profile.label ? cyan(` (${profile.label})`) : '';
+  const metricsStr = dim(`[${healthiest.avgQuotaPercentage}% capacity, ${healthiest.exhaustedCount} exhausted]`);
+  console.log(`${green('active')} ${bold(profile.email)}${labelStr} ${metricsStr}`);
 }

@@ -135,9 +135,19 @@ export function isBgUpdater(commandLine: string): boolean {
 /** Command lines of every running agy process. */
 function agyProcesses(): string[] {
   if (process.platform === 'win32') {
+    // Fast path: if tasklist finds no agy.exe, return [] instantly (~30ms)
+    // without spawning powershell.exe (~600ms).
+    const quick = spawnSync('tasklist', ['/FI', 'IMAGENAME eq agy.exe', '/NH'], {
+      encoding: 'utf8',
+      windowsHide: true,
+    });
+    if (quick.status === 0 && !quick.stdout.toLowerCase().includes('agy.exe')) {
+      return [];
+    }
+
     const r = spawnSync(
-      'powershell',
-      ['-NoProfile', '-NonInteractive', '-Command', `Get-CimInstance Win32_Process -Filter "Name='agy.exe'" | ForEach-Object CommandLine`],
+      'powershell.exe',
+      ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', `Get-CimInstance Win32_Process -Filter "Name='agy.exe'" | ForEach-Object CommandLine`],
       { encoding: 'utf8', windowsHide: true },
     );
     return r.status === 0 ? r.stdout.split(/\r?\n/).filter((l) => l.trim()) : [];
@@ -163,7 +173,8 @@ export function agyPath(): string | null {
 
 /** Installed agy version, e.g. "1.1.11". `agy --version` prints it and exits non-zero. */
 export function agyVersion(): string | null {
-  const r = spawnSync('agy', ['--version'], {
+  const exe = agyPath() ?? 'agy';
+  const r = spawnSync(exe, ['--version'], {
     encoding: 'utf8',
     windowsHide: true,
   });
@@ -194,7 +205,8 @@ export function runAgyQuiet(
   onLine?: (line: string) => void,
 ): Promise<{ code: number; output: string }> {
   return new Promise((resolve, reject) => {
-    const child = spawn('agy', args, { windowsHide: true });
+    const exe = agyPath() ?? 'agy';
+    const child = spawn(exe, args, { windowsHide: true });
     let output = '';
     let buffer = '';
 
@@ -222,7 +234,8 @@ export function runAgyQuiet(
 
 /** Run `agy` attached to this terminal. Returns its exit code. */
 export function launchAgy(args: string[], env?: NodeJS.ProcessEnv): number {
-  const r = spawnSync('agy', args, { stdio: 'inherit', env });
+  const exe = agyPath() ?? 'agy';
+  const r = spawnSync(exe, args, { stdio: 'inherit', env });
   if (r.error) throw new Error(`could not launch agy: ${r.error.message}`);
   return r.status ?? 0;
 }

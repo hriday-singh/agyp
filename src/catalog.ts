@@ -58,8 +58,25 @@ export function loadCatalog(email: string): Catalog | null {
 export function saveCatalog(email: string, catalog: Catalog): void {
   const file = loadFile();
   file.accounts[email] = { seenAt: new Date().toISOString(), models: catalog };
-  mkdirSync(vaultDir(), { recursive: true, mode: 0o700 });
-  writeFileSync(catalogPath(), JSON.stringify(file, null, 2) + '\n', { mode: 0o600 });
+  try {
+    mkdirSync(vaultDir(), { recursive: true, mode: 0o700 });
+    writeFileSync(catalogPath(), JSON.stringify(file, null, 2) + '\n', { mode: 0o600 });
+  } catch {
+    // non-fatal
+  }
+}
+
+export function removeCatalog(email: string): void {
+  const file = loadFile();
+  if (file.accounts[email]) {
+    delete file.accounts[email];
+    try {
+      mkdirSync(vaultDir(), { recursive: true, mode: 0o700 });
+      writeFileSync(catalogPath(), JSON.stringify(file, null, 2) + '\n', { mode: 0o600 });
+    } catch {
+      // non-fatal
+    }
+  }
 }
 
 /**

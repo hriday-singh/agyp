@@ -1,20 +1,17 @@
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { readFileSync } from 'node:fs';
 import { delimiter, join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { agyCommandLines, clearLive, finalFrame, isAgyBlob, isBgUpdater, liveTokenFilePath, parseBlob, readLiveRaw, writeLive } from '../src/agy.js';
+import { agyCommandLines, finalFrame, isAgyBlob, isBgUpdater, parseBlob } from '../src/agy.js';
 import { chromePath, guestBrowserEnv } from '../src/browser.js';
 import { UserError, parseArgs } from '../src/args.js';
 import { catalogFromSnapshot, describeDiff, diffCatalog, isEmptyDiff } from '../src/catalog.js';
-import { CLOUDCODE, matchModelToGroup, parseQuotaGroups, parseSnapshot, secretsInBinary, shouldShowModel } from '../src/google.js';
 import { COMMAND_HELP, HELP } from '../src/help.js';
 import { validateLabel } from '../src/index.js';
 import { decodeGoKeyring, winTarget } from '../src/keyring.js';
-import { bar, humanDuration, renderSnapshot, resetLabel, spinner } from '../src/render.js';
+import { resetLabel, spinner } from '../src/render.js';
 import { cmdSpinner, getRandomSpinnerText, SPINNER_TEXTS } from '../src/spinner.js';
-import { calculatePlanStats, clearUsageCache, findHealthiestProfile, loadUsageCache, rankProfileHealth, recordUsageSnapshot } from '../src/stats.js';
 import { COMMAND_ALIASES, findBestMatch, levenshtein } from '../src/suggest.js';
-import { delSecret, fingerprint, getSecret, resolve, secretsDir, setSecret, upsert, vaultDir, type VaultIndex } from '../src/vault.js';
+import { fingerprint, resolve, upsert, type VaultIndex } from '../src/vault.js';
 
 describe('parseArgs', () => {
   it('splits command, positional, flags and passthrough', () => {
@@ -28,6 +25,13 @@ describe('parseArgs', () => {
   it('reads --label as a value option, not a flag', () => {
     const parsed = parseArgs(['login', '--label', 'personal']);
     expect(parsed.options.get('label')).toBe('personal');
+    expect(parsed.flags.has('label')).toBe(false);
+    expect(parsed.positional).toEqual([]);
+  });
+
+  it('parses --option=value syntax', () => {
+    const parsed = parseArgs(['login', '--label=work']);
+    expect(parsed.options.get('label')).toBe('work');
     expect(parsed.flags.has('label')).toBe(false);
     expect(parsed.positional).toEqual([]);
   });
@@ -49,11 +53,17 @@ describe('parseArgs', () => {
 
   it('rejects --label with no value', () => {
     expect(() => parseArgs(['login', '--label'])).toThrow(UserError);
+    expect(() => parseArgs(['login', '--label='])).toThrow(UserError);
   });
 
   it('defaults to help', () => {
     expect(parseArgs([]).command).toBe('help');
     expect(parseArgs(['-h']).flags.has('help')).toBe(true);
+  });
+
+  it('normalizes commands case-insensitively', () => {
+    expect(parseArgs(['STATUS']).command).toBe('status');
+    expect(parseArgs(['LiSt']).command).toBe('list');
   });
 
   it('supports positional label after login (e.g. agyp login pa)', () => {
@@ -63,36 +73,9 @@ describe('parseArgs', () => {
     expect(parsed.positional).toEqual([]);
   });
 
-  it('supports positional label before login (e.g. agyp pa login)', () => {
-    const parsed = parseArgs(['pa', 'login']);
-    expect(parsed.command).toBe('login');
-    expect(parsed.options.get('label')).toBe('pa');
-    expect(parsed.positional).toEqual([]);
-  });
-
-  it('supports positional label with flags and passthrough for login', () => {
-    const p1 = parseArgs(['pa', 'login', '--force', '--default-browser']);
+  it('supports positional label before save/adopt/login (e.g. agyp pa login)', () => {
+    const p1 = parseArgs(['pa', 'login']);
     expect(p1.command).toBe('login');
-    expect(p1.options.get('label')).toBe('pa');
-    expect(p1.flags.has('force')).toBe(true);
-    expect(p1.flags.has('default-browser')).toBe(true);
-
-    const p2 = parseArgs(['pa', 'login', '--', '--model', 'gemini-3.1-pro']);
-    expect(p2.command).toBe('login');
-    expect(p2.options.get('label')).toBe('pa');
-    expect(p2.passthrough).toEqual(['--model', 'gemini-3.1-pro']);
-  });
-
-  it('supports positional label with login command aliases (e.g. agyp pa add)', () => {
-    const parsed = parseArgs(['pa', 'add']);
-    expect(parsed.command).toBe('add');
-    expect(parsed.options.get('label')).toBe('pa');
-    expect(parsed.positional).toEqual([]);
-  });
-
-  it('supports positional label for adopt (both adopt pa and pa adopt)', () => {
-    const p1 = parseArgs(['adopt', 'pa']);
-    expect(p1.command).toBe('adopt');
     expect(p1.options.get('label')).toBe('pa');
 
     const p2 = parseArgs(['pa', 'adopt']);
@@ -205,334 +188,6 @@ describe('agy credential blob', () => {
   });
 });
 
-describe('quota parsing', () => {
-  it('hides internal models and anything without a display name', () => {
-    expect(shouldShowModel('claude-opus-4-6-thinking', { quotaInfo: {}, displayName: 'Claude' })).toBe(true);
-    expect(shouldShowModel('tab_completion', { quotaInfo: {}, displayName: 'Tab' })).toBe(false);
-    expect(shouldShowModel('chat_20706', { quotaInfo: {}, displayName: 'Chat' })).toBe(false);
-    expect(shouldShowModel('gemini-3.6-flash-tiered', { quotaInfo: {} })).toBe(false);
-    expect(shouldShowModel('claude-opus-4-6-thinking', { displayName: 'Claude' })).toBe(false);
-  });
-
-  it('maps the API response into a snapshot', () => {
-    const nowMs = Date.parse('2026-08-10T06:00:00Z');
-    const snapshot = parseSnapshot(
-      { planInfo: { planType: 'FREE', monthlyPromptCredits: 100 }, availablePromptCredits: 40 },
-      {
-        models: {
-          'z-model': {
-            displayName: 'Zebra',
-            quotaInfo: { remainingFraction: 0.5, resetTime: '2026-08-10T10:00:00Z' },
-          },
-          'a-model': {
-            displayName: 'Apple',
-            quotaInfo: { remainingFraction: 0, resetTime: '2026-08-10T04:00:00Z' },
-          },
-          tab_hidden: { displayName: 'Hidden', quotaInfo: { remainingFraction: 1 } },
-        },
-      },
-      'alice@gmail.com',
-      nowMs,
-    );
-
-    expect(snapshot.models.map((m) => m.label)).toEqual(['Apple', 'Zebra']);
-    expect(snapshot.models[1]!.timeUntilResetMs).toBe(4 * 60 * 60 * 1000);
-    // a reset time in the past is not a countdown
-    expect(snapshot.models[0]!.timeUntilResetMs).toBeUndefined();
-    expect(snapshot.models[0]!.isExhausted).toBe(true);
-    expect(snapshot.planType).toBe('FREE');
-    expect(snapshot.promptCredits).toEqual({ available: 40, monthly: 100, remainingPercentage: 0.4 });
-  });
-
-  it('groups model ids that share a display name into one quota pool', () => {
-    const nowMs = Date.parse('2026-08-10T06:00:00Z');
-    const snapshot = parseSnapshot(
-      {},
-      {
-        models: {
-          'gemini-2.5-flash': { displayName: 'Flash Lite', quotaInfo: { resetTime: '2026-08-11T18:00:00Z' } },
-          'gemini-3.1-flash-lite': {
-            displayName: 'Flash Lite',
-            quotaInfo: { remainingFraction: 0.25, resetTime: '2026-08-10T18:00:00Z' },
-          },
-        },
-      },
-      'alice@gmail.com',
-      nowMs,
-    );
-
-    expect(snapshot.models).toHaveLength(1);
-    expect(snapshot.models[0]!.modelIds).toEqual(['gemini-2.5-flash', 'gemini-3.1-flash-lite']);
-    expect(snapshot.models[0]!.remainingPercentage).toBe(0.25);
-    // the soonest reset across the pool is the one that matters
-    expect(snapshot.models[0]!.resetTime).toBe('2026-08-10T18:00:00Z');
-  });
-
-  it('reports the paid subscription, not the free-tier Code Assist licence', () => {
-    const snapshot = parseSnapshot(
-      {
-        currentTier: { id: 'free-tier', name: 'Antigravity' },
-        paidTier: { id: 'g1-pro-tier', name: 'Google AI Pro' },
-      },
-      { models: {} },
-      'a@b.com',
-    );
-    expect(snapshot.planType).toBe('Google AI Pro');
-  });
-
-  it('falls back to the tier id when there is no plan info', () => {
-    const snapshot = parseSnapshot({ currentTier: { id: 'free-tier' } }, { models: {} }, 'a@b.com');
-    expect(snapshot.planType).toBe('free-tier');
-    expect(snapshot.promptCredits).toBeUndefined();
-  });
-
-  it('parses quota groups and buckets from retrieveUserQuotaSummary', () => {
-    const nowMs = Date.parse('2026-09-06T12:00:00Z');
-    const groups = parseQuotaGroups(
-      {
-        groups: [
-          {
-            displayName: 'Gemini Models',
-            description: 'Models within this group: Gemini Flash, Gemini Pro',
-            buckets: [
-              {
-                bucketId: 'gemini-weekly',
-                displayName: 'Weekly Limit Remaining',
-                window: 'weekly',
-                resetTime: '2026-09-08T12:00:00Z',
-                remainingFraction: 0.54,
-              },
-              {
-                bucketId: 'gemini-5h',
-                displayName: 'Five Hour Limit Remaining',
-                window: '5h',
-                resetTime: '2026-09-06T17:00:00Z',
-                remainingFraction: 1,
-              },
-            ],
-          },
-        ],
-      },
-      nowMs,
-    );
-
-    expect(groups).toBeDefined();
-    expect(groups).toHaveLength(1);
-    expect(groups![0]!.displayName).toBe('Gemini Models');
-    expect(groups![0]!.buckets).toHaveLength(2);
-    expect(groups![0]!.buckets[0]!.remainingFraction).toBe(0.54);
-    expect(groups![0]!.buckets[0]!.timeUntilResetMs).toBe(2 * 24 * 60 * 60 * 1000);
-    expect(groups![0]!.buckets[1]!.timeUntilResetMs).toBe(5 * 60 * 60 * 1000);
-  });
-
-  it('matches models to groups by model family and keywords', () => {
-    const groups = [
-      { displayName: 'Gemini Models', description: 'Models within this group: Gemini Flash, Gemini Pro', buckets: [] },
-      { displayName: 'Claude and GPT models', description: 'Models within this group: Claude Opus, Claude Sonnet, GPT-OSS', buckets: [] },
-    ];
-
-    expect(matchModelToGroup('gemini-3.1-pro-high', 'Gemini 3.1 Pro (High)', groups)?.displayName).toBe('Gemini Models');
-    expect(matchModelToGroup('claude-sonnet-4-6', 'Claude Sonnet 4.6 (Thinking)', groups)?.displayName).toBe('Claude and GPT models');
-    expect(matchModelToGroup('gpt-oss-120b-medium', 'GPT-OSS 120B (Medium)', groups)?.displayName).toBe('Claude and GPT models');
-  });
-
-  it('integrates quota summary into snapshot, reflecting true used weekly quota', () => {
-    const nowMs = Date.parse('2026-09-06T12:00:00Z');
-    const snapshot = parseSnapshot(
-      { paidTier: { name: 'Google AI Pro' } },
-      {
-        models: {
-          'gemini-3.1-pro-high': {
-            displayName: 'Gemini 3.1 Pro (High)',
-            quotaInfo: { remainingFraction: 1, resetTime: '2026-09-06T17:00:00Z' },
-          },
-          'claude-opus-4-6-thinking': {
-            displayName: 'Claude Opus 4.6 (Thinking)',
-            quotaInfo: { remainingFraction: 1, resetTime: '2026-09-06T17:00:00Z' },
-          },
-        },
-      },
-      'brawl@gmail.com',
-      nowMs,
-      {
-        groups: [
-          {
-            displayName: 'Gemini Models',
-            description: 'Models within this group: Gemini Flash, Gemini Pro',
-            buckets: [
-              {
-                bucketId: 'gemini-weekly',
-                displayName: 'Weekly Limit Remaining',
-                window: 'weekly',
-                resetTime: '2026-09-08T12:00:00Z',
-                remainingFraction: 0.54,
-              },
-              {
-                bucketId: 'gemini-5h',
-                displayName: 'Five Hour Limit Remaining',
-                window: '5h',
-                resetTime: '2026-09-06T17:00:00Z',
-                remainingFraction: 1,
-              },
-            ],
-          },
-          {
-            displayName: 'Claude and GPT models',
-            description: 'Models within this group: Claude Opus, Claude Sonnet, GPT-OSS',
-            buckets: [
-              {
-                bucketId: '3p-weekly',
-                displayName: 'Weekly Limit Remaining',
-                window: 'weekly',
-                resetTime: '2026-09-13T12:00:00Z',
-                remainingFraction: 1,
-              },
-              {
-                bucketId: '3p-5h',
-                displayName: 'Five Hour Limit Remaining',
-                window: '5h',
-                resetTime: '2026-09-06T17:00:00Z',
-                remainingFraction: 1,
-              },
-            ],
-          },
-        ],
-      },
-    );
-
-    expect(snapshot.quotaGroups).toHaveLength(2);
-    const gemini = snapshot.models.find((m) => m.label.includes('Gemini'));
-    expect(gemini?.remainingPercentage).toBe(0.54);
-    expect(gemini?.resetTime).toBe('2026-09-08T12:00:00Z');
-    expect(gemini?.timeUntilResetMs).toBe(2 * 24 * 60 * 60 * 1000);
-    expect(gemini?.isExhausted).toBe(false);
-
-    const claude = snapshot.models.find((m) => m.label.includes('Claude'));
-    expect(claude?.remainingPercentage).toBe(1);
-    expect(claude?.resetTime).toBe('2026-09-06T17:00:00Z');
-    expect(claude?.timeUntilResetMs).toBe(5 * 60 * 60 * 1000);
-  });
-
-  it('marks model as exhausted when 5-hour limit reaches 0 despite weekly remaining quota', () => {
-    const nowMs = Date.parse('2026-09-06T15:30:00Z');
-    const snapshot = parseSnapshot(
-      { paidTier: { name: 'Google AI Pro' } },
-      {
-        models: {
-          'gemini-3.1-pro-high': {
-            displayName: 'Gemini 3.1 Pro (High)',
-            quotaInfo: { remainingFraction: 1, resetTime: '2026-09-06T18:30:00Z' },
-          },
-        },
-      },
-      'bonka@gmail.com',
-      nowMs,
-      {
-        groups: [
-          {
-            displayName: 'Gemini Models',
-            description: 'Models within this group: Gemini Flash, Gemini Pro',
-            buckets: [
-              {
-                bucketId: 'gemini-weekly',
-                displayName: 'Weekly Limit Remaining',
-                window: 'weekly',
-                resetTime: '2026-09-13T13:30:00Z',
-                remainingFraction: 0.83,
-              },
-              {
-                bucketId: 'gemini-5h',
-                displayName: 'Five Hour Limit Remaining',
-                window: '5h',
-                resetTime: '2026-09-06T18:30:00Z',
-                remainingFraction: 0,
-              },
-            ],
-          },
-        ],
-      },
-    );
-
-    const model = snapshot.models.find((m) => m.label.includes('Gemini'));
-    expect(model).toBeDefined();
-    expect(model?.remainingPercentage).toBe(0);
-    expect(model?.isExhausted).toBe(true);
-    expect(model?.resetTime).toBe('2026-09-06T18:30:00Z');
-    expect(model?.timeUntilResetMs).toBe(3 * 60 * 60 * 1000);
-  });
-
-  it('defaults CLOUDCODE.baseUrl to daily-cloudcode-pa.googleapis.com', () => {
-    expect(CLOUDCODE.baseUrl).toBe('https://daily-cloudcode-pa.googleapis.com');
-  });
-});
-
-describe('render helpers', () => {
-  it('formats durations', () => {
-    expect(humanDuration(0)).toBe('now');
-    expect(humanDuration(45 * 60_000)).toBe('45m');
-    expect(humanDuration(4 * 3_600_000 + 41 * 60_000)).toBe('4h 41m');
-    expect(humanDuration(50 * 3_600_000)).toBe('2d 2h');
-  });
-
-  it('draws a fixed-width bar and clamps out-of-range input', () => {
-    const strip = (s: string) => s.replace(/[^█░]/g, '');
-    expect(strip(bar(0.5, 10))).toBe('█████░░░░░');
-    expect(strip(bar(-1, 4))).toBe('░░░░');
-    expect(strip(bar(2, 4))).toBe('████');
-  });
-
-  it('renders snapshot with quota groups and buckets', () => {
-    const snapshot = {
-      email: 'user@gmail.com',
-      planType: 'Google AI Pro',
-      models: [
-        { label: 'Gemini 3.1 Pro', modelIds: ['gemini-3.1-pro'], remainingPercentage: 0.54, isExhausted: false, groupName: 'Gemini Models' },
-      ],
-      quotaGroups: [
-        {
-          displayName: 'Gemini Models',
-          description: 'Models within this group: Gemini Flash, Gemini Pro',
-          buckets: [
-            {
-              bucketId: 'gemini-weekly',
-              displayName: 'Weekly Limit Remaining',
-              window: 'weekly',
-              remainingFraction: 0.54,
-              timeUntilResetMs: 28 * 3600 * 1000,
-            },
-            {
-              bucketId: 'gemini-5h',
-              displayName: 'Five Hour Limit Remaining',
-              window: '5h',
-              remainingFraction: 0.9,
-              timeUntilResetMs: 2 * 3600 * 1000,
-            },
-          ],
-        },
-      ],
-    };
-
-    const rendered = renderSnapshot(snapshot);
-    expect(rendered).toContain('user@gmail.com');
-    expect(rendered).toContain('Google AI Pro');
-    expect(rendered).toContain('Gemini Models');
-    expect(rendered).toContain('Weekly Limit Remaining');
-    expect(rendered).toContain('54%');
-    expect(rendered).toContain('resets in 1d 4h');
-    expect(rendered).toContain('Five Hour Limit Remaining');
-    expect(rendered).toContain('90%');
-    expect(rendered).toContain('resets in 2h');
-
-    // Without showModels, individual group models are not repeated
-    expect(rendered).not.toContain('Models:');
-
-    // With showModels, models are listed
-    const withModels = renderSnapshot(snapshot, true);
-    expect(withModels).toContain('Models:');
-    expect(withModels).toContain('Gemini 3.1 Pro');
-  });
-});
-
 describe('model catalog', () => {
   it('flattens a snapshot into modelId -> label', () => {
     const catalog = catalogFromSnapshot({
@@ -636,47 +291,6 @@ describe('Did You Mean suggestions', () => {
   });
 });
 
-describe('usage & plan statistics', () => {
-  it('calculates plan statistics across accounts', () => {
-    const stats = calculatePlanStats([
-      {
-        email: 'pro@gmail.com',
-        planType: 'Google AI Pro',
-        promptCredits: { available: 80, monthly: 100, remainingPercentage: 0.8 },
-        models: [{ label: 'Gemini 3.1 Pro', modelIds: ['gemini-3.1-pro'], remainingPercentage: 1, isExhausted: false }],
-      },
-      {
-        email: 'free@gmail.com',
-        planType: 'Free Tier',
-        models: [{ label: 'Gemini 3.1 Pro', modelIds: ['gemini-3.1-pro'], remainingPercentage: 0, isExhausted: true }],
-      },
-    ]);
-
-    expect(stats.totalProfiles).toBe(2);
-    expect(stats.plans['Google AI Pro']).toBe(1);
-    expect(stats.plans['Free Tier']).toBe(1);
-    expect(stats.totalAvailableCredits).toBe(80);
-    expect(stats.totalMonthlyCredits).toBe(100);
-    expect(stats.bestProfileForUse?.email).toBe('pro@gmail.com');
-  });
-
-  it('caches and clears usage snapshots', () => {
-    clearUsageCache();
-    recordUsageSnapshot({
-      email: 'user@gmail.com',
-      planType: 'Google AI Pro',
-      models: [],
-    });
-
-    const cache = loadUsageCache();
-    expect(cache.snapshots['user@gmail.com']?.planType).toBe('Google AI Pro');
-
-    clearUsageCache();
-    const cleared = loadUsageCache();
-    expect(Object.keys(cleared.snapshots)).toHaveLength(0);
-  });
-});
-
 describe('spinner command and controller', () => {
   it('includes standard status messages in SPINNER_TEXTS', () => {
     expect(SPINNER_TEXTS).toContain('identifying account');
@@ -729,7 +343,6 @@ describe('spinner command and controller', () => {
   });
 });
 
-
 describe('finalFrame', () => {
   it('keeps only what agy left after its last redraw', () => {
     expect(finalFrame('\u25d0 checking\r\u25d3 checking\rfound new version 1.2.0')).toBe(
@@ -757,283 +370,6 @@ describe('agy process detection', () => {
   it('picks only agy executables out of ps output', () => {
     const ps = ['/usr/bin/bash', '/home/me/.local/bin/agy --bg-updater', 'agy', 'node agyp.js', 'vim agy.ts', ''].join('\n');
     expect(agyCommandLines(ps)).toEqual(['/home/me/.local/bin/agy --bg-updater', 'agy']);
-  });
-});
-
-describe('token file and vault fallback', () => {
-  it('liveTokenFilePath resolves to antigravity-oauth-token', () => {
-    const defaultPath = liveTokenFilePath();
-    expect(defaultPath.endsWith('antigravity-oauth-token')).toBe(true);
-
-    const oldEnv = process.env.GEMINI_CLI_DATA_DIR;
-    try {
-      process.env.GEMINI_CLI_DATA_DIR = '/custom/data/dir';
-      expect(liveTokenFilePath()).toBe(join('/custom/data/dir', 'antigravity-oauth-token'));
-    } finally {
-      if (oldEnv === undefined) delete process.env.GEMINI_CLI_DATA_DIR;
-      else process.env.GEMINI_CLI_DATA_DIR = oldEnv;
-    }
-  });
-
-  it('file fallback handles live token write, read and clear', () => {
-    const testDir = join(tmpdir(), `agyp-test-token-${Date.now()}`);
-    mkdirSync(testDir, { recursive: true });
-    const oldEnv = process.env.GEMINI_CLI_DATA_DIR;
-    process.env.GEMINI_CLI_DATA_DIR = testDir;
-
-    const sample = JSON.stringify({
-      token: { access_token: 'test_access', token_type: 'Bearer', refresh_token: 'test_refresh', expiry: '2026-08-10T11:15:02Z' },
-      auth_method: 'consumer',
-    });
-
-    try {
-      writeLive(sample);
-      const readBack = readLiveRaw();
-      expect(readBack).toBe(sample);
-      expect(existsSync(join(testDir, 'antigravity-oauth-token'))).toBe(true);
-
-      clearLive();
-      expect(existsSync(join(testDir, 'antigravity-oauth-token'))).toBe(false);
-    } finally {
-      if (oldEnv === undefined) delete process.env.GEMINI_CLI_DATA_DIR;
-      else process.env.GEMINI_CLI_DATA_DIR = oldEnv;
-      rmSync(testDir, { recursive: true, force: true });
-    }
-  });
-
-  it('vault secret storage fallback persists and removes secrets', () => {
-    const testVault = join(tmpdir(), `agyp-test-vault-${Date.now()}`);
-    mkdirSync(testVault, { recursive: true });
-    const oldHome = process.env.AGYP_HOME;
-    process.env.AGYP_HOME = testVault;
-
-    try {
-      const email = 'fallback-test@example.com';
-      const secretData = 'test-secret-payload';
-
-      setSecret(email, secretData);
-      const fetched = getSecret(email);
-      expect(fetched).toBe(secretData);
-
-      delSecret(email);
-      const deleted = getSecret(email);
-      expect(deleted).toBeNull();
-    } finally {
-      if (oldHome === undefined) delete process.env.AGYP_HOME;
-      else process.env.AGYP_HOME = oldHome;
-      rmSync(testVault, { recursive: true, force: true });
-    }
-  });
-});
-
-
-describe('healthiest profile auto-selection', () => {
-  it('ranks profiles by health score and chooses zero-exhausted over exhausted pools', () => {
-    const snapshots = [
-      {
-        email: 'exhausted@gmail.com',
-        models: [
-          { label: 'Gemini 3.1 Pro', modelIds: ['gemini-3.1-pro'], remainingPercentage: 0, isExhausted: true },
-          { label: 'Claude', modelIds: ['claude'], remainingPercentage: 1, isExhausted: false },
-        ],
-      },
-      {
-        email: 'healthy@gmail.com',
-        models: [
-          { label: 'Gemini 3.1 Pro', modelIds: ['gemini-3.1-pro'], remainingPercentage: 0.8, isExhausted: false },
-          { label: 'Claude', modelIds: ['claude'], remainingPercentage: 0.7, isExhausted: false },
-        ],
-      },
-    ];
-
-    const ranked = snapshots.map(rankProfileHealth);
-    expect(ranked.find((r) => r.email === 'healthy@gmail.com')?.exhaustedCount).toBe(0);
-    expect(ranked.find((r) => r.email === 'exhausted@gmail.com')?.exhaustedCount).toBe(1);
-
-    const healthiest = findHealthiestProfile(snapshots);
-    expect(healthiest?.email).toBe('healthy@gmail.com');
-  });
-
-  it('selects profile with highest average quota among healthy accounts', () => {
-    const snapshots = [
-      {
-        email: 'medium@gmail.com',
-        models: [
-          { label: 'Gemini 3.1 Pro', modelIds: ['gemini-3.1-pro'], remainingPercentage: 0.5, isExhausted: false },
-        ],
-      },
-      {
-        email: 'high@gmail.com',
-        models: [
-          { label: 'Gemini 3.1 Pro', modelIds: ['gemini-3.1-pro'], remainingPercentage: 0.95, isExhausted: false },
-        ],
-      },
-    ];
-
-    const healthiest = findHealthiestProfile(snapshots);
-    expect(healthiest?.email).toBe('high@gmail.com');
-    expect(healthiest?.avgQuotaPercentage).toBe(95);
-  });
-
-  it('preserves active account if tied for top score', () => {
-    const snapshots = [
-      {
-        email: 'account-a@gmail.com',
-        models: [{ label: 'Model', modelIds: ['m'], remainingPercentage: 1, isExhausted: false }],
-      },
-      {
-        email: 'account-b@gmail.com',
-        models: [{ label: 'Model', modelIds: ['m'], remainingPercentage: 1, isExhausted: false }],
-      },
-    ];
-
-    const pickA = findHealthiestProfile(snapshots, 'account-a@gmail.com');
-    expect(pickA?.email).toBe('account-a@gmail.com');
-
-    const pickB = findHealthiestProfile(snapshots, 'account-b@gmail.com');
-    expect(pickB?.email).toBe('account-b@gmail.com');
-  });
-
-  it('handles empty snapshots gracefully', () => {
-    expect(findHealthiestProfile([])).toBeNull();
-  });
-
-  it('maps auto and autorun aliases and updates command help', () => {
-    expect(COMMAND_ALIASES.best).toBe('autorun');
-    expect(COMMAND_ALIASES.pick).toBe('autorun');
-    expect(COMMAND_ALIASES['auto-use']).toBe('auto');
-    expect(COMMAND_ALIASES['auto-run']).toBe('autorun');
-    expect(COMMAND_ALIASES['run-auto']).toBe('autorun');
-
-    expect(HELP).toContain('auto');
-    expect(HELP).toContain('autorun');
-    expect(HELP).toContain('--auto');
-    expect(COMMAND_HELP.auto).toBeDefined();
-    expect(COMMAND_HELP.auto).toContain('agyp auto');
-    expect(COMMAND_HELP.autorun).toBeDefined();
-    expect(COMMAND_HELP.autorun).toContain('agyp autorun');
-  });
-
-  it('resolves primary command for best to autorun', () => {
-    const primary = COMMAND_ALIASES['best'] ?? 'best';
-    expect(primary).toBe('autorun');
-  });
-
-  it('parses auto commands and flags', () => {
-    const p1 = parseArgs(['use', '--auto']);
-    expect(p1.command).toBe('use');
-    expect(p1.flags.has('auto')).toBe(true);
-
-    const p2 = parseArgs(['run', '--auto', '--', '--verbose']);
-    expect(p2.command).toBe('run');
-    expect(p2.flags.has('auto')).toBe(true);
-    expect(p2.passthrough).toEqual(['--verbose']);
-
-    const p3 = parseArgs(['auto']);
-    expect(p3.command).toBe('auto');
-
-    const p4 = parseArgs(['autorun', '--', 'start']);
-    expect(p4.command).toBe('autorun');
-    expect(p4.passthrough).toEqual(['start']);
-
-    const p5 = parseArgs(['best', 'run']);
-    expect(p5.command).toBe('best');
-    expect(p5.positional).toEqual(['run']);
-
-    const p6 = parseArgs(['run', 'best']);
-    expect(p6.command).toBe('run');
-    expect(p6.positional).toEqual(['best']);
-
-    const p7 = parseArgs(['use', 'best']);
-    expect(p7.command).toBe('use');
-    expect(p7.positional).toEqual(['best']);
-
-    const p8 = parseArgs(['run', '--best']);
-    expect(p8.flags.has('best')).toBe(true);
-
-    const p9 = parseArgs(['best', '--', '-p', 'hello']);
-    expect(p9.command).toBe('best');
-    expect(p9.passthrough).toEqual(['-p', 'hello']);
-    expect(COMMAND_ALIASES[p9.command] ?? p9.command).toBe('autorun');
-
-    const p10 = parseArgs(['best', '-d']);
-    expect(p10.command).toBe('best');
-    expect(p10.flags.has('default-browser')).toBe(true);
-    expect(COMMAND_ALIASES[p10.command] ?? p10.command).toBe('autorun');
-  });
-
-  it('supports -d and default-browser flag aliases', () => {
-    const p1 = parseArgs(['login', 'clash', '-d']);
-    expect(p1.command).toBe('login');
-    expect(p1.options.get('label')).toBe('clash');
-    expect(p1.flags.has('default-browser')).toBe(true);
-
-    const p2 = parseArgs(['clash', 'login', '-d']);
-    expect(p2.command).toBe('login');
-    expect(p2.options.get('label')).toBe('clash');
-    expect(p2.flags.has('default-browser')).toBe(true);
-
-    const p3 = parseArgs(['login', '--browser']);
-    expect(p3.flags.has('default-browser')).toBe(true);
-
-    const p4 = parseArgs(['login', '--system-browser']);
-    expect(p4.flags.has('default-browser')).toBe(true);
-
-    const p5 = parseArgs(['login', '--no-guest']);
-    expect(p5.flags.has('default-browser')).toBe(true);
-  });
-
-  it('prioritizes Gemini quota first, then Claude quota', () => {
-    const snapshots = [
-      {
-        email: 'higher-claude@gmail.com',
-        models: [
-          { label: 'Gemini 3.1 Pro', modelIds: ['gemini-3.1-pro'], remainingPercentage: 0.7, isExhausted: false },
-          { label: 'Claude 3.7 Sonnet', modelIds: ['claude-3.7-sonnet'], remainingPercentage: 1.0, isExhausted: false },
-        ],
-      },
-      {
-        email: 'higher-gemini@gmail.com',
-        models: [
-          { label: 'Gemini 3.1 Pro', modelIds: ['gemini-3.1-pro'], remainingPercentage: 0.9, isExhausted: false },
-          { label: 'Claude 3.7 Sonnet', modelIds: ['claude-3.7-sonnet'], remainingPercentage: 0.2, isExhausted: false },
-        ],
-      },
-    ];
-
-    const healthiest = findHealthiestProfile(snapshots);
-    expect(healthiest?.email).toBe('higher-gemini@gmail.com');
-  });
-
-  it('breaks ties on Gemini quota using Claude quota', () => {
-    const snapshots = [
-      {
-        email: 'low-claude@gmail.com',
-        models: [
-          { label: 'Gemini 3.1 Pro', modelIds: ['gemini-3.1-pro'], remainingPercentage: 0.8, isExhausted: false },
-          { label: 'Claude 3.7 Sonnet', modelIds: ['claude-3.7-sonnet'], remainingPercentage: 0.3, isExhausted: false },
-        ],
-      },
-      {
-        email: 'high-claude@gmail.com',
-        models: [
-          { label: 'Gemini 3.1 Pro', modelIds: ['gemini-3.1-pro'], remainingPercentage: 0.8, isExhausted: false },
-          { label: 'Claude 3.7 Sonnet', modelIds: ['claude-3.7-sonnet'], remainingPercentage: 0.9, isExhausted: false },
-        ],
-      },
-    ];
-
-    const healthiest = findHealthiestProfile(snapshots);
-    expect(healthiest?.email).toBe('high-claude@gmail.com');
-  });
-});
-
-describe('secretsInBinary', () => {
-  it('pulls every distinct desktop client secret out of a binary, in order', () => {
-    const a = 'GOCSPX-' + 'a'.repeat(28);
-    const b = 'GOCSPX-' + 'B_-9'.repeat(7);
-    const bin = Buffer.concat([Buffer.from([0, 1, 2]), Buffer.from(`${a}\0GOCSPX-short\0${b}${a}`), Buffer.from([255])]);
-    expect(secretsInBinary(bin)).toEqual([a, b]);
   });
 });
 

@@ -14,11 +14,11 @@
  * leaves the new one signed in there afterwards. A guest window shares no
  * cookies with your profile in either direction.
  */
-import { chmodSync, mkdtempSync, writeFileSync } from 'node:fs';
-import { existsSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { delimiter, join } from 'node:path';
+import { vaultDir } from './vault.js';
 
 function firstExisting(paths: string[]): string | null {
   return paths.find((p) => p && existsSync(p)) ?? null;
@@ -47,6 +47,28 @@ export function chromePath(): string | null {
   return null;
 }
 
+export function browserShimDir(): string {
+  return join(vaultDir(), 'browser-shim');
+}
+
+export function cleanupLegacyShims(): void {
+  try {
+    const tmp = tmpdir();
+    const entries = readdirSync(tmp);
+    for (const e of entries) {
+      if (e.startsWith('agyp-browser-')) {
+        try {
+          rmSync(join(tmp, e), { recursive: true, force: true });
+        } catch {
+          // ignore busy/locked
+        }
+      }
+    }
+  } catch {
+    // non-fatal
+  }
+}
+
 /**
  * Environment for a child agy that opens links in a Chrome guest window.
  * Returns null (caller falls back to the default browser) when Chrome is absent.
@@ -55,14 +77,22 @@ export function guestBrowserEnv(env: NodeJS.ProcessEnv = process.env): NodeJS.Pr
   const chrome = chromePath();
   if (!chrome) return null;
 
-  const dir = mkdtempSync(join(tmpdir(), 'agyp-browser-'));
-  if (process.platform === 'win32') {
-    const cmd = [
-      '@echo off',
-      `for /f "tokens=1,*" %%a in ("%*") do start "" "${chrome}" --guest "%%b"`,
-      '',
-    ].join('\r\n');
-    writeFileSync(join(dir, 'rundll32.cmd'), cmd);
+  const dir = browserShimDir();
+  const markerFile = join(dir, '.chrome-path');
+  const needsSetup =
+    !existsSync(dir) ||
+    !existsSync(join(dir, process.platform === 'win32' ? 'rundll32.cmd' : 'xdg-open')) ||
+    (existsSync(markerFile) ? readFileSync(markerFile, 'utf8') !== chrome : true);
+
+  if (needsSetup) {
+    mkdirSync(dir, { recursive: true, mode: 0o700 });
+    if (process.platform === 'win32') {
+      const cmd = [
+        '@echo off',
+        `for /f "tokens=1,*" %%a in ("%*") do start "" "${chrome}" --guest "%%b"`,
+        '',
+      ].join('\r\n');
+      writeFileSync(join(dir, 'rundll32.cmd'), cmd);
 
     const cscPaths = [
       join(process.env['SystemRoot'] ?? 'C:\\Windows', 'Microsoft.NET', 'Framework64', 'v4.0.30319', 'csc.exe'),
@@ -111,6 +141,13 @@ class Program {
       writeFileSync(file, script);
       chmodSync(file, 0o755);
     }
+  }
+    try {
+      writeFileSync(markerFile, chrome);
+    } catch {
+      // non-fatal
+    }
+    cleanupLegacyShims();
   }
   return { ...env, PATH: `${dir}${delimiter}${env['PATH'] ?? ''}` };
 }

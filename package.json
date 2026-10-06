@@ -35,7 +35,7 @@
   ],
   "scripts": {
     "build": "tsc",
-    "dev": "node --experimental-strip-types src/index.ts",
+    "dev": "tsc && node dist/index.js",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },

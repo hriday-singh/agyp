@@ -10,17 +10,17 @@
 import * as agy from './agy.js';
 import { UserError, parseArgs } from './args.js';
 import { guestBrowserEnv } from './browser.js';
-import { describeDiff, trackCatalog } from './catalog.js';
+import { describeDiff, removeCatalog, trackCatalog } from './catalog.js';
 import { fetchEmail, fetchQuota, refreshAccessToken, type Snapshot } from './google.js';
 import { COMMAND_HELP, HELP } from './help.js';
 import * as keyring from './keyring.js';
 import { bold, cyan, dim, green, red, renderSnapshot, spinner, yellow } from './render.js';
 import { cmdSpinner } from './spinner.js';
-import { cmdStats, findHealthiestProfile, recordUsageSnapshot, type HealthiestProfileResult } from './stats.js';
+import { cmdStats, findHealthiestProfile, printActiveProfile, recordUsageSnapshot, recordUsageSnapshots, removeUsageSnapshot, type HealthiestProfileResult } from './stats.js';
 import { ALL_COMMAND_NAMES, COMMAND_ALIASES, findBestMatch, formatSuggestion } from './suggest.js';
 import {
   PENDING_ACCOUNT, VAULT_SERVICE, activeEmail, delSecret, fingerprint,
-  getSecret, indexPath, install, loadIndex, resolve, saveIndex,
+  getSecret, indexPath, install, loadIndex, pickDefault, resolve, saveIndex,
   secretsDir, setSecret, snapshotFor, upsert, validateLabel,
   type ProfileMeta, type VaultIndex,
 } from './vault.js';
@@ -61,7 +61,7 @@ async function syncBack(index: VaultIndex): Promise<VaultIndex> {
   const byFingerprint = index.profiles.find((p) => p.fingerprint === print);
   if (byFingerprint) {
     setSecret(byFingerprint.email, raw);
-    return upsert(index, { ...byFingerprint, lastUsed: now() });
+    return { ...upsert(index, { ...byFingerprint, lastUsed: now() }), active: byFingerprint.email };
   }
 
   let email: string;
@@ -78,7 +78,7 @@ async function syncBack(index: VaultIndex): Promise<VaultIndex> {
     return index;
   }
   setSecret(email, raw);
-  return upsert(index, { ...known, fingerprint: print, lastUsed: now() });
+  return { ...upsert(index, { ...known, fingerprint: print, lastUsed: now() }), active: email };
 }
 
 /** Undo a `login` that was interrupted before it could capture a new credential. */
@@ -305,9 +305,9 @@ async function resolveHealthiestProfile(
   results.forEach((res) => {
     if (res.status === 'fulfilled') {
       validSnapshots.push(res.value.snapshot);
-      recordUsageSnapshot(res.value.snapshot);
     }
   });
+  recordUsageSnapshots(validSnapshots);
 
   if (validSnapshots.length === 0) {
     throw new UserError('failed to fetch quota for any profile. Check network connectivity.');
@@ -333,12 +333,6 @@ async function cmdAutoUse(force: boolean): Promise<void> {
   const { profile, healthiest } = await resolveHealthiestProfile(index);
   saveIndex(install(index, profile));
   printActiveProfile(profile, healthiest);
-}
-
-function printActiveProfile(profile: ProfileMeta, healthiest: HealthiestProfileResult): void {
-  const labelStr = profile.label ? cyan(` (${profile.label})`) : '';
-  const metricsStr = dim(`[${healthiest.avgQuotaPercentage}% capacity, ${healthiest.exhaustedCount} exhausted]`);
-  console.log(`${green('active')} ${bold(profile.email)}${labelStr} ${metricsStr}`);
 }
 
 async function cmdAutoRun(
@@ -392,7 +386,6 @@ async function cmdUsage(target: string | undefined, json: boolean, showModels = 
       return;
     }
     snapshots.push(result.value.snapshot);
-    recordUsageSnapshot(result.value.snapshot);
     if (result.value.projectId && result.value.projectId !== profile.projectId) {
       index = upsert(index, { ...profile, projectId: result.value.projectId });
     }
@@ -405,6 +398,7 @@ async function cmdUsage(target: string | undefined, json: boolean, showModels = 
     }
   });
 
+  recordUsageSnapshots(snapshots);
   saveIndex(index);
   if (json) console.log(JSON.stringify(all ? snapshots : snapshots[0], null, 2));
 }
@@ -461,13 +455,6 @@ async function cmdUpdate(checkOnly: boolean, force: boolean): Promise<void> {
     console.log('  ' + tint(line));
   }
   console.log(dim('\nNo action needed; quota tracks whatever the API reports.'));
-}
-
-function pickDefault(index: VaultIndex): ProfileMeta {
-  const active = activeEmail(index);
-  const chosen = index.profiles.find((p) => p.email === active) ?? index.profiles[0];
-  if (!chosen) throw new UserError('no profiles found. Run `agyp adopt` or `agyp login`.');
-  return chosen;
 }
 
 async function cmdStatus(json: boolean): Promise<void> {
@@ -529,6 +516,8 @@ async function cmdRemove(target: string): Promise<void> {
       warn(`${profile.email} is the account agy is currently using; it stays signed in until you switch or log out`);
     }
     delSecret(profile.email);
+    removeCatalog(profile.email);
+    removeUsageSnapshot(profile.email);
     saveIndex({
       ...index,
       active: index.active === profile.email ? undefined : index.active,
@@ -599,7 +588,8 @@ function cmdDoctor(): void {
     line(false, err instanceof Error ? err.message : String(err));
   }
 
-  line(!agy.agyRunning(), agy.agyRunning() ? 'agy is running: switching is blocked' : 'agy is not running');
+  const isRunning = agy.agyRunning();
+  line(!isRunning, isRunning ? 'agy is running: switching is blocked' : 'agy is not running');
   if (backend.ok) {
     console.log(dim(`  secrets stored under keyring service "${VAULT_SERVICE}"`));
   } else {
@@ -668,7 +658,7 @@ async function main(): Promise<void> {
     case 'doctor':
       return cmdDoctor();
     case 'stats':
-      return cmdStats(json, flags.has('reset'));
+      return cmdStats(json, flags.has('reset') || flags.has('clear'));
     case 'spinner':
       return cmdSpinner(target);
     default: {
@@ -682,5 +672,8 @@ async function main(): Promise<void> {
 main().catch((err: unknown) => {
   const message = err instanceof Error ? err.message : String(err);
   console.error(`${red('error')} ${message}`);
+  if (process.env.DEBUG && err instanceof Error && err.stack) {
+    console.error(dim(err.stack));
+  }
   process.exit(1);
 });

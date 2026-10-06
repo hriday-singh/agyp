@@ -42,27 +42,35 @@ export function parseArgs(argv: string[]): Parsed {
       flags.add('default-browser');
     } else if (arg.startsWith('--')) {
       const name = arg.slice(2);
-      if (VALUE_OPTIONS.has(name)) {
-        const value = own[++i];
-        if (!value) throw new UserError(`--${name} needs a value`);
-        options.set(name, value);
-      } else if (name === 'browser' || name === 'system-browser' || name === 'no-guest') {
+      let optName = name;
+      let optVal: string | undefined;
+      const eqIdx = name.indexOf('=');
+      if (eqIdx !== -1) {
+        optName = name.slice(0, eqIdx);
+        optVal = name.slice(eqIdx + 1);
+      }
+
+      if (VALUE_OPTIONS.has(optName)) {
+        const value = optVal !== undefined ? optVal : own[++i];
+        if (!value) throw new UserError(`--${optName} needs a value`);
+        options.set(optName, value);
+      } else if (optName === 'browser' || optName === 'system-browser' || optName === 'no-guest') {
         flags.add('default-browser');
       } else {
-        flags.add(name);
+        flags.add(optName);
       }
     } else {
       positional.push(arg);
     }
   }
 
-  let command = positional[0] ?? 'help';
+  let command = (positional[0] ?? 'help').toLowerCase();
   let remainingPositional = positional.slice(1);
 
   // If the invocation is `<label> login` (e.g. `agyp pa login` or `agyp work add`),
   // normalize so command is `login` and label is `pa`.
-  if (positional.length >= 2 && !KNOWN_COMMANDS.has(positional[0]!)) {
-    const candidate = positional[1]!;
+  if (positional.length >= 2 && !KNOWN_COMMANDS.has(positional[0]!.toLowerCase())) {
+    const candidate = positional[1]!.toLowerCase();
     if (isLabelCommand(candidate)) {
       command = candidate;
       if (!options.has('label')) {

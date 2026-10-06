@@ -1,4 +1,4 @@
-import type { ModelQuota, Snapshot } from './google.js';
+import type { Snapshot } from './google.js';
 
 const useColor = process.stdout.isTTY && !process.env.NO_COLOR;
 const ESC = String.fromCharCode(27);
@@ -84,11 +84,12 @@ export function humanDuration(ms: number): string {
   const days = Math.floor(hours / 24);
   if (days > 0) return `${days}d ${hours % 24}h`;
   if (hours > 0) return `${hours}h ${minutes % 60}m`;
-  return `${minutes}m`;
+  return minutes > 0 ? `${minutes}m` : '<1m';
 }
 
 export function bar(fraction: number, width = 20): string {
-  const clamped = Math.max(0, Math.min(1, fraction));
+  const safeFraction = Number.isFinite(fraction) ? fraction : 0;
+  const clamped = Math.max(0, Math.min(1, safeFraction));
   const filled = Math.round(clamped * width);
   const glyphs = '█'.repeat(filled) + '░'.repeat(width - filled);
   const tint = clamped > 0.5 ? green : clamped > 0.2 ? yellow : red;

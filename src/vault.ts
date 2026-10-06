@@ -10,7 +10,7 @@
  * read instead of decrypting every profile.
  */
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { parseBlob, readLiveRaw, writeLive } from './agy.js';
@@ -70,8 +70,22 @@ export function loadIndex(): VaultIndex {
 }
 
 export function saveIndex(index: VaultIndex): void {
-  mkdirSync(vaultDir(), { recursive: true, mode: 0o700 });
-  writeFileSync(indexPath(), JSON.stringify(index, null, 2) + '\n', { mode: 0o600 });
+  const dir = vaultDir();
+  mkdirSync(dir, { recursive: true, mode: 0o700 });
+  const target = indexPath();
+  const tmp = join(dir, `profiles.json.tmp.${process.pid}.${Date.now()}`);
+  const data = JSON.stringify(index, null, 2) + '\n';
+  try {
+    writeFileSync(tmp, data, { mode: 0o600 });
+    renameSync(tmp, target);
+  } catch {
+    writeFileSync(target, data, { mode: 0o600 });
+    try {
+      rmSync(tmp, { force: true });
+    } catch {
+      // ignore
+    }
+  }
 }
 
 function encodeAccount(account: string): string {
@@ -107,6 +121,15 @@ export function setSecret(email: string, raw: string): void {
   if (!keyringSuccess) {
     mkdirSync(secretsDir(), { recursive: true, mode: 0o700 });
     writeFileSync(join(secretsDir(), encodeAccount(email)), raw, { mode: 0o600 });
+  } else {
+    const file = join(secretsDir(), encodeAccount(email));
+    if (existsSync(file)) {
+      try {
+        rmSync(file, { force: true });
+      } catch {
+        // ignore
+      }
+    }
   }
 }
 
@@ -176,34 +199,42 @@ export async function snapshotFor(profile: ProfileMeta): Promise<{ snapshot: Sna
  * label, or unambiguous email prefix.
  */
 export function resolve(index: VaultIndex, target: string): ProfileMeta {
-  const byEmail = index.profiles.find((p) => p.email === target);
+  const trimmed = target.trim();
+  const byEmail = index.profiles.find((p) => p.email === trimmed);
   if (byEmail) return byEmail;
 
-  if (/^\d+$/.test(target)) {
-    const at = index.profiles[Number(target) - 1];
-    if (!at) throw new Error(`no profile #${target} (have ${index.profiles.length})`);
+  if (/^\d+$/.test(trimmed)) {
+    const at = index.profiles[Number(trimmed) - 1];
+    if (!at) throw new Error(`no profile #${trimmed} (have ${index.profiles.length})`);
     return at;
   }
 
-  const lower = target.toLowerCase();
+  const lower = trimmed.toLowerCase();
   const matches = index.profiles.filter(
     (p) => p.label?.toLowerCase() === lower || p.email.toLowerCase().startsWith(lower),
   );
   if (matches.length === 1) return matches[0]!;
   if (matches.length > 1) {
-    throw new Error(`"${target}" matches ${matches.map((m) => m.email).join(', ')}; please be more specific`);
+    throw new Error(`"${trimmed}" matches ${matches.map((m) => m.email).join(', ')}; please be more specific`);
   }
   const candidates: string[] = [];
   for (const p of index.profiles) {
     candidates.push(p.email);
     if (p.label) candidates.push(p.label);
   }
-  const bestMatch = findBestMatch(target, candidates);
-  const suggestion = formatSuggestion(target, bestMatch);
-  throw new Error(`no profile matching "${target}"${suggestion}. Run \`agyp list\` to view available profiles.`);
+  const bestMatch = findBestMatch(trimmed, candidates);
+  const suggestion = formatSuggestion(trimmed, bestMatch);
+  throw new Error(`no profile matching "${trimmed}"${suggestion}. Run \`agyp list\` to view available profiles.`);
 }
 
 export function upsert(index: VaultIndex, meta: ProfileMeta): VaultIndex {
   const rest = index.profiles.filter((p) => p.email !== meta.email);
   return { ...index, profiles: [...rest, meta].sort((a, b) => a.email.localeCompare(b.email)) };
+}
+
+export function pickDefault(index: VaultIndex): ProfileMeta {
+  const active = activeEmail(index);
+  const chosen = index.profiles.find((p) => p.email === active) ?? index.profiles[0];
+  if (!chosen) throw new UserError('no profiles found. Run `agyp adopt` or `agyp login`.');
+  return chosen;
 }

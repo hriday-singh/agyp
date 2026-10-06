@@ -10,8 +10,10 @@
  * ANTIGRAVITY_OAUTH_CLIENT_ID / _SECRET if Google ever rotates it.
  */
 
-import { readFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { agyPath } from './agy.js';
+import { vaultDir } from './vault.js';
 
 export const OAUTH = {
   clientId:
@@ -83,13 +85,62 @@ export function secretsInBinary(bin: Buffer): string[] {
   return [...found];
 }
 
+interface SecretsCache {
+  binPath: string;
+  mtimeMs: number;
+  size: number;
+  secrets: string[];
+}
+
+function clientSecretsCachePath(): string {
+  return join(vaultDir(), 'client_secrets.json');
+}
+
+function loadCachedSecrets(bin: string): string[] | null {
+  try {
+    const cachePath = clientSecretsCachePath();
+    if (!existsSync(cachePath)) return null;
+    const stat = statSync(bin);
+    const data = JSON.parse(readFileSync(cachePath, 'utf8')) as SecretsCache;
+    if (data.binPath === bin && data.mtimeMs === stat.mtimeMs && data.size === stat.size && Array.isArray(data.secrets) && data.secrets.length > 0) {
+      return data.secrets;
+    }
+  } catch {
+    // cache miss or corrupt
+  }
+  return null;
+}
+
+function saveCachedSecrets(bin: string, secrets: string[]): void {
+  try {
+    const stat = statSync(bin);
+    const cache: SecretsCache = { binPath: bin, mtimeMs: stat.mtimeMs, size: stat.size, secrets };
+    mkdirSync(vaultDir(), { recursive: true, mode: 0o700 });
+    writeFileSync(clientSecretsCachePath(), JSON.stringify(cache, null, 2) + '\n', { mode: 0o600 });
+  } catch {
+    // non-fatal
+  }
+}
+
 let cachedSecrets: string[] | undefined;
 function clientSecrets(): string[] {
   const env = process.env.ANTIGRAVITY_OAUTH_CLIENT_SECRET;
   if (env) return [env];
   if (!cachedSecrets) {
     const bin = agyPath();
-    cachedSecrets = bin ? secretsInBinary(readFileSync(bin)) : [];
+    if (bin) {
+      const cached = loadCachedSecrets(bin);
+      if (cached) {
+        cachedSecrets = cached;
+      } else {
+        cachedSecrets = secretsInBinary(readFileSync(bin));
+        if (cachedSecrets.length > 0) {
+          saveCachedSecrets(bin, cachedSecrets);
+        }
+      }
+    } else {
+      cachedSecrets = [];
+    }
   }
   if (!cachedSecrets.length) {
     throw new Error('could not find the OAuth client in the agy binary. Please install agy or set ANTIGRAVITY_OAUTH_CLIENT_SECRET.');
@@ -145,17 +196,24 @@ async function cloudCode(path: string, accessToken: string, body: unknown): Prom
     'User-Agent': CLOUDCODE.userAgent,
   };
 
+  let primaryRes: Response | undefined;
   try {
-    const res = await fetch(`${primaryUrl}${path}`, {
+    primaryRes = await fetch(`${primaryUrl}${path}`, {
       method: 'POST',
       headers,
       body: JSON.stringify(body),
     });
-    if (res.ok) {
-      return (await res.json()) as Record<string, unknown>;
+    if (primaryRes.ok) {
+      return (await primaryRes.json()) as Record<string, unknown>;
     }
-    if (primaryUrl.includes('daily-cloudcode-pa') && !process.env.ANTIGRAVITY_ENDPOINT) {
-      const fallbackUrl = 'https://cloudcode-pa.googleapis.com';
+  } catch {
+    // Network / DNS error on primaryUrl
+  }
+
+  // Attempt fallback once if primary was daily-cloudcode-pa and custom endpoint is not set
+  if (primaryUrl.includes('daily-cloudcode-pa') && !process.env.ANTIGRAVITY_ENDPOINT) {
+    const fallbackUrl = 'https://cloudcode-pa.googleapis.com';
+    try {
       const fallbackRes = await fetch(`${fallbackUrl}${path}`, {
         method: 'POST',
         headers,
@@ -164,26 +222,16 @@ async function cloudCode(path: string, accessToken: string, body: unknown): Prom
       if (fallbackRes.ok) {
         return (await fallbackRes.json()) as Record<string, unknown>;
       }
+      primaryRes = fallbackRes;
+    } catch {
+      // Fallback network error
     }
-    throw new Error(`${path} failed: ${res.status} ${(await res.text()).slice(0, 200)}`);
-  } catch (err) {
-    if (primaryUrl.includes('daily-cloudcode-pa') && !process.env.ANTIGRAVITY_ENDPOINT) {
-      const fallbackUrl = 'https://cloudcode-pa.googleapis.com';
-      try {
-        const fallbackRes = await fetch(`${fallbackUrl}${path}`, {
-          method: 'POST',
-          headers,
-          body: JSON.stringify(body),
-        });
-        if (fallbackRes.ok) {
-          return (await fallbackRes.json()) as Record<string, unknown>;
-        }
-      } catch {
-        // preserve original error below
-      }
-    }
-    throw err;
   }
+
+  if (primaryRes) {
+    throw new Error(`${path} failed: ${primaryRes.status} ${(await primaryRes.text()).slice(0, 200)}`);
+  }
+  throw new Error(`${path} network request failed`);
 }
 
 export function loadCodeAssist(accessToken: string) {
@@ -239,7 +287,7 @@ export function parseQuotaGroups(
       const window = typeof rawB['window'] === 'string' ? rawB['window'] : undefined;
       const resetTime = typeof rawB['resetTime'] === 'string' ? rawB['resetTime'] : undefined;
       const resetMs = resetTime ? new Date(resetTime).getTime() - now : NaN;
-      const remainingFraction = typeof rawB['remainingFraction'] === 'number' ? rawB['remainingFraction'] : 1;
+      const remainingFraction = typeof rawB['remainingFraction'] === 'number' ? rawB['remainingFraction'] : undefined;
       const desc = typeof rawB['description'] === 'string' ? rawB['description'] : undefined;
 
       buckets.push({
@@ -384,8 +432,22 @@ export async function fetchQuota(
   cachedProjectId?: string,
 ): Promise<{ snapshot: Snapshot; projectId?: string }> {
   const accessToken = await refreshAccessToken(refreshToken);
+
+  if (cachedProjectId) {
+    const [loadResponse, modelsResponse, quotaSummaryResponse] = await Promise.all([
+      loadCodeAssist(accessToken),
+      fetchAvailableModels(accessToken, cachedProjectId),
+      retrieveUserQuotaSummary(accessToken, cachedProjectId).catch(() => undefined),
+    ]);
+    const projectId = extractProjectId(loadResponse) ?? cachedProjectId;
+    return {
+      snapshot: parseSnapshot(loadResponse, modelsResponse, email, Date.now(), quotaSummaryResponse),
+      projectId,
+    };
+  }
+
   const loadResponse = await loadCodeAssist(accessToken);
-  const projectId = cachedProjectId ?? extractProjectId(loadResponse);
+  const projectId = extractProjectId(loadResponse);
   const [modelsResponse, quotaSummaryResponse] = await Promise.all([
     fetchAvailableModels(accessToken, projectId),
     retrieveUserQuotaSummary(accessToken, projectId).catch(() => undefined),

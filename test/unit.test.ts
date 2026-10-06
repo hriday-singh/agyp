@@ -899,8 +899,8 @@ describe('healthiest profile auto-selection', () => {
   });
 
   it('maps auto and autorun aliases and updates command help', () => {
-    expect(COMMAND_ALIASES.best).toBe('auto');
-    expect(COMMAND_ALIASES.pick).toBe('auto');
+    expect(COMMAND_ALIASES.best).toBe('autorun');
+    expect(COMMAND_ALIASES.pick).toBe('autorun');
     expect(COMMAND_ALIASES['auto-use']).toBe('auto');
     expect(COMMAND_ALIASES['auto-run']).toBe('autorun');
     expect(COMMAND_ALIASES['run-auto']).toBe('autorun');
@@ -912,6 +912,11 @@ describe('healthiest profile auto-selection', () => {
     expect(COMMAND_HELP.auto).toContain('agyp auto');
     expect(COMMAND_HELP.autorun).toBeDefined();
     expect(COMMAND_HELP.autorun).toContain('agyp autorun');
+  });
+
+  it('resolves primary command for best to autorun', () => {
+    const primary = COMMAND_ALIASES['best'] ?? 'best';
+    expect(primary).toBe('autorun');
   });
 
   it('parses auto commands and flags', () => {
@@ -945,6 +950,16 @@ describe('healthiest profile auto-selection', () => {
 
     const p8 = parseArgs(['run', '--best']);
     expect(p8.flags.has('best')).toBe(true);
+
+    const p9 = parseArgs(['best', '--', '-p', 'hello']);
+    expect(p9.command).toBe('best');
+    expect(p9.passthrough).toEqual(['-p', 'hello']);
+    expect(COMMAND_ALIASES[p9.command] ?? p9.command).toBe('autorun');
+
+    const p10 = parseArgs(['best', '-d']);
+    expect(p10.command).toBe('best');
+    expect(p10.flags.has('default-browser')).toBe(true);
+    expect(COMMAND_ALIASES[p10.command] ?? p10.command).toBe('autorun');
   });
 
   it('supports -d and default-browser flag aliases', () => {

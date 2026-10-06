@@ -82,11 +82,11 @@ agyp use work
 # Switch to a profile and launch agy immediately
 agyp run personal
 
-# Automatically switch to the best account (highest Gemini quota, then Claude)
+# Switch to the best account and launch agy immediately (urgency mode)
 agyp best
 
-# Or switch to the best account and launch agy immediately
-agyp run best
+# Or switch to the best account without launching agy
+agyp use best
 
 # Check model quota across all accounts
 agyp usage
@@ -115,8 +115,8 @@ Recommendation: use `use` to configure your default background profile, and use 
 | `agyp list [--json]` | List saved profiles with status indicator on the active account | `ls`, `show`, `all` |
 | `agyp use <target>` | Set a saved profile as the active account for `agy` | `switch`, `select`, `set` |
 | `agyp run [target] [-- args]` | Switch profile and launch `agy`; passes trailing arguments to `agy` | `start`, `exec`, `launch` |
-| `agyp best` / `agyp auto` | Select and switch to best profile (highest Gemini quota, then Claude) | `auto`, `pick` |
-| `agyp run best` / `agyp autorun` | Auto-select best profile and launch `agy` immediately | `auto-run` |
+| `agyp best` / `agyp autorun` | Auto-select best profile and launch `agy` immediately | `auto-run` |
+| `agyp auto` / `agyp use best` | Select and switch to best profile (highest Gemini quota, then Claude) | `auto-use` |
 | `agyp usage [target] [--all]` | Display model quota and prompt credits (defaults to all profiles) | `quota`, `credits`, `limits` |
 | `agyp plan` / `agyp stats` | Aggregate usage statistics, subscription tiers, and combined credits | `statistics`, `metrics` |
 | `agyp update [--check]` | Update the `agy` CLI and report model lineup modifications | `upgrade`, `sync-models` |

@@ -19,24 +19,10 @@ import { cmdSpinner } from './spinner.js';
 import { cmdStats, findHealthiestProfile, recordUsageSnapshot, type HealthiestProfileResult } from './stats.js';
 import { ALL_COMMAND_NAMES, COMMAND_ALIASES, findBestMatch, formatSuggestion } from './suggest.js';
 import {
-  PENDING_ACCOUNT,
-  VAULT_SERVICE,
-  activeEmail,
-  delSecret,
-  fingerprint,
-  getSecret,
-  indexPath,
-  install,
-  loadIndex,
-  resolve,
-  saveIndex,
-  secretsDir,
-  setSecret,
-  snapshotFor,
-  upsert,
-  validateLabel,
-  type ProfileMeta,
-  type VaultIndex,
+  PENDING_ACCOUNT, VAULT_SERVICE, activeEmail, delSecret, fingerprint,
+  getSecret, indexPath, install, loadIndex, resolve, saveIndex,
+  secretsDir, setSecret, snapshotFor, upsert, validateLabel,
+  type ProfileMeta, type VaultIndex,
 } from './vault.js';
 
 export { validateLabel } from './vault.js';
@@ -346,6 +332,10 @@ async function cmdAutoUse(force: boolean): Promise<void> {
 
   const { profile, healthiest } = await resolveHealthiestProfile(index);
   saveIndex(install(index, profile));
+  printActiveProfile(profile, healthiest);
+}
+
+function printActiveProfile(profile: ProfileMeta, healthiest: HealthiestProfileResult): void {
   const labelStr = profile.label ? cyan(` (${profile.label})`) : '';
   const metricsStr = dim(`[${healthiest.avgQuotaPercentage}% capacity, ${healthiest.exhaustedCount} exhausted]`);
   console.log(`${green('active')} ${bold(profile.email)}${labelStr} ${metricsStr}`);
@@ -368,7 +358,7 @@ async function cmdAutoRun(
   const { profile, healthiest } = await resolveHealthiestProfile(index);
   index = install(index, profile);
   saveIndex(index);
-  info(`running as ${profile.email} [${healthiest.avgQuotaPercentage}% capacity]`);
+  printActiveProfile(profile, healthiest);
 
   const code = agy.launchAgy(agyArgs, defaultBrowser ? undefined : (guestBrowserEnv() ?? undefined));
   const stopBack = spinner('syncing profile updates');

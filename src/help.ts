@@ -28,8 +28,8 @@ ${bold('COMMANDS')}
   list                            List saved profiles and active one (aliases: ls, show, all)
   use <target>                    Make a profile agy's active account (aliases: switch, select, set)
   run [target] [-- args]          Switch profile and launch agy CLI (aliases: start, exec, launch)
-  auto                            Auto-select and switch to the healthiest profile (aliases: best, pick)
-  autorun [-- args]               Auto-select healthiest profile and launch agy (aliases: auto-run)
+  auto                            Auto-select and switch to the healthiest profile (aliases: auto-use)
+  autorun [-- args]               Auto-select healthiest profile and launch agy (aliases: best, pick, auto-run)
   usage [target]                  Show model quota (aliases: quota, credits, limits)
   update [--check]                Update agy CLI and check model lineup (aliases: upgrade, sync-models)
   status                          Show active profile and sync status (aliases: info, st, whoami)
@@ -63,7 +63,8 @@ ${bold('EXAMPLES')}
   agyp label personal --clear      # remove label from personal profile
   agyp usage                       # quota across every account
   agyp usage work                  # quota for one account
-  agyp best                        # switch to account with highest Gemini/Claude quota
+  agyp best                        # switch to best account and launch agy immediately
+  agyp use best                    # switch to best account without launching agy
   agyp run best                    # switch to best account and launch agy immediately
   agyp run work                    # launch agy using work profile
   agyp spinner 6                   # run spinner for 6 seconds
@@ -149,7 +150,6 @@ ${USE_VS_RUN}`,
 
 ${bold('USAGE')}
   agyp auto [--force]
-  agyp best [--force]
   agyp use best [--force]
   agyp use --auto [--force]
 
@@ -161,6 +161,7 @@ ${bold('DESCRIPTION')}
   autorun: `${bold('agyp autorun')} - Auto-select healthiest profile and launch agy
 
 ${bold('USAGE')}
+  agyp best [--force] [-d] [--default-browser] [-- <agy args>]
   agyp autorun [--force] [-d] [--default-browser] [-- <agy args>]
   agyp run best [--force] [-d] [--default-browser] [-- <agy args>]
   agyp best run [--force] [-d] [--default-browser] [-- <agy args>]

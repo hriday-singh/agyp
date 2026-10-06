@@ -64,8 +64,8 @@ export const COMMAND_ALIASES: Record<string, string> = {
   loading: 'spinner',
 
 
-  best: 'auto',
-  pick: 'auto',
+  best: 'autorun',
+  pick: 'autorun',
   'auto-use': 'auto',
   'auto-run': 'autorun',
   'run-auto': 'autorun',

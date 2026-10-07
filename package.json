@@ -16,7 +16,7 @@
     "agyp": "dist/index.js"
   },
   "engines": {
-    "node": ">=18"
+    "node": ">=20.12.0"
   },
   "license": "MIT",
   "keywords": [

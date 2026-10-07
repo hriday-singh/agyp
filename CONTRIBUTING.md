@@ -6,7 +6,7 @@ Thank you for considering contributing to `agyp`.
 
 ### Prerequisites
 
-- Node.js 18 or higher
+- Node.js 20 (>=20.12) or higher
 - The Antigravity (`agy`) CLI installed and on your system `PATH`
 - On Linux (GUI): `libsecret-tools` or `libsecret` installed
 

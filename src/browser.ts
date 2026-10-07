@@ -48,7 +48,9 @@ export function chromePath(): string | null {
 }
 
 export function browserShimDir(): string {
-  return join(vaultDir(), 'browser-shim');
+  const dir = join(vaultDir(), 'browser-shim');
+  mkdirSync(dir, { recursive: true, mode: 0o700 });
+  return dir;
 }
 
 export function cleanupLegacyShims(): void {

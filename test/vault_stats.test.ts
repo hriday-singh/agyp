@@ -258,9 +258,18 @@ describe('removeCatalog and browserShimDir', () => {
   });
 
   it('creates and returns persistent browser shim dir', () => {
-    const dir = browserShimDir();
-    expect(existsSync(dir)).toBe(true);
-    expect(dir).toContain('browser-shim');
+    const testHome = join(tmpdir(), `agyp-shim-${Date.now()}`);
+    const oldHome = process.env.AGYP_HOME;
+    process.env.AGYP_HOME = testHome;
+    try {
+      const dir = browserShimDir();
+      expect(existsSync(dir)).toBe(true);
+      expect(dir).toContain('browser-shim');
+    } finally {
+      if (oldHome === undefined) delete process.env.AGYP_HOME;
+      else process.env.AGYP_HOME = oldHome;
+      rmSync(testHome, { recursive: true, force: true });
+    }
   });
 });
 

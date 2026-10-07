@@ -36,7 +36,7 @@ alex.personal@gmail.com (Google AI Pro)
 
 ### Prerequisites
 
-- Node.js 18 or higher
+- Node.js 20 (>=20.12) or higher
 - The `agy` CLI installed and available on your system `PATH`
 
 ### Build and Install

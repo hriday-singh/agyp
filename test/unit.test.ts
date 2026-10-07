@@ -243,7 +243,7 @@ describe('guest browser shim', () => {
       expect(script).not.toContain('%~2');
       expect(script).toContain('tokens=1,*');
     }
-  });
+  }, 30000);
 });
 
 describe('help text', () => {

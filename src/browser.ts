@@ -102,9 +102,10 @@ export function guestBrowserEnv(env: NodeJS.ProcessEnv = process.env): NodeJS.Pr
     ];
     const csc = cscPaths.find((p) => existsSync(p));
     if (csc) {
-      const csFile = join(dir, 'Program.cs');
       const exeFile = join(dir, 'rundll32.exe');
-      const csCode = `
+      if (!existsSync(exeFile)) {
+        const csFile = join(dir, 'Program.cs');
+        const csCode = `
 using System;
 using System.Diagnostics;
 
@@ -132,8 +133,9 @@ class Program {
     }
 }
 `;
-      writeFileSync(csFile, csCode);
-      spawnSync(csc, ['/nologo', `/out:${exeFile}`, csFile], { encoding: 'utf8' });
+        writeFileSync(csFile, csCode);
+        spawnSync(csc, ['/nologo', `/out:${exeFile}`, csFile], { encoding: 'utf8', timeout: 15000 });
+      }
     }
   } else {
     // ponytail: one shim per name pkg/browser tries; whichever it picks, it lands here.

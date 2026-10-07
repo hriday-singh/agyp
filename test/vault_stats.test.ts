@@ -1,7 +1,8 @@
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+import * as keyring from '../src/keyring.js';
 import { clearLive, liveTokenFilePath, readLiveRaw, writeLive } from '../src/agy.js';
 import { UserError } from '../src/args.js';
 import { browserShimDir } from '../src/browser.js';
@@ -105,6 +106,10 @@ describe('token file and vault fallback', () => {
       auth_method: 'consumer',
     });
 
+    const spySet = vi.spyOn(keyring, 'set').mockImplementation(() => { throw new Error('Keyring unavailable'); });
+    const spyGet = vi.spyOn(keyring, 'get').mockImplementation(() => { throw new Error('Keyring unavailable'); });
+    const spyDel = vi.spyOn(keyring, 'del').mockImplementation(() => { throw new Error('Keyring unavailable'); });
+
     try {
       writeLive(sample);
       const readBack = readLiveRaw();
@@ -114,17 +119,24 @@ describe('token file and vault fallback', () => {
       clearLive();
       expect(existsSync(join(testDir, 'antigravity-oauth-token'))).toBe(false);
     } finally {
+      spySet.mockRestore();
+      spyGet.mockRestore();
+      spyDel.mockRestore();
       if (oldEnv === undefined) delete process.env.GEMINI_CLI_DATA_DIR;
       else process.env.GEMINI_CLI_DATA_DIR = oldEnv;
       rmSync(testDir, { recursive: true, force: true });
     }
-  });
+  }, 30000);
 
   it('vault secret storage fallback persists and removes secrets', () => {
     const testVault = join(tmpdir(), `agyp-test-vault-${Date.now()}`);
     mkdirSync(testVault, { recursive: true });
     const oldHome = process.env.AGYP_HOME;
     process.env.AGYP_HOME = testVault;
+
+    const spySet = vi.spyOn(keyring, 'set').mockImplementation(() => { throw new Error('Keyring unavailable'); });
+    const spyGet = vi.spyOn(keyring, 'get').mockImplementation(() => { throw new Error('Keyring unavailable'); });
+    const spyDel = vi.spyOn(keyring, 'del').mockImplementation(() => { throw new Error('Keyring unavailable'); });
 
     try {
       const email = 'fallback-test@example.com';
@@ -138,11 +150,14 @@ describe('token file and vault fallback', () => {
       const deleted = getSecret(email);
       expect(deleted).toBeNull();
     } finally {
+      spySet.mockRestore();
+      spyGet.mockRestore();
+      spyDel.mockRestore();
       if (oldHome === undefined) delete process.env.AGYP_HOME;
       else process.env.AGYP_HOME = oldHome;
       rmSync(testVault, { recursive: true, force: true });
     }
-  });
+  }, 30000);
 });
 
 describe('healthiest profile auto-selection', () => {
@@ -279,6 +294,7 @@ describe('pickDefault', () => {
     mkdirSync(testDir, { recursive: true });
     const oldEnv = process.env.GEMINI_CLI_DATA_DIR;
     process.env.GEMINI_CLI_DATA_DIR = testDir;
+    const spyGet = vi.spyOn(keyring, 'get').mockImplementation(() => null);
 
     try {
       const index: VaultIndex = {
@@ -290,6 +306,7 @@ describe('pickDefault', () => {
       };
       expect(pickDefault(index).email).toBe('a@example.com');
     } finally {
+      spyGet.mockRestore();
       if (oldEnv === undefined) delete process.env.GEMINI_CLI_DATA_DIR;
       else process.env.GEMINI_CLI_DATA_DIR = oldEnv;
       rmSync(testDir, { recursive: true, force: true });

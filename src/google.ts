@@ -350,11 +350,12 @@ export function parseSnapshot(
   const quotaGroups = parseQuotaGroups(quotaSummaryResponse, now);
   const grouped = new Map<string, ModelQuota>();
   const raw = (modelsResponse['models'] ?? {}) as Record<string, RawModel>;
+  const picker = pickerModelIds(modelsResponse);
 
   for (const [modelId, model] of Object.entries(raw)) {
-    if (!shouldShowModel(modelId, model)) continue;
+    if (picker ? !picker.has(modelId) || !model.quotaInfo : !shouldShowModel(modelId, model)) continue;
     const quota = model.quotaInfo;
-    const label = model.displayName || model.label || modelId;
+    const label = model.displayName || model.label || tieredLabel(modelId);
     const existing = grouped.get(label);
 
     const matchedGroup = quotaGroups ? matchModelToGroup(modelId, label, quotaGroups) : undefined;
@@ -417,6 +418,31 @@ export function parseSnapshot(
     models,
     quotaGroups,
   };
+}
+
+/**
+ * The models agy actually offers in its picker (`agy models`): `agentModelSorts`
+ * plus the flash/pro tiered Gemini ids. The rest of `models` is legacy or background plumbing
+ * (commit messages, web search, image gen). Undefined if the API omits both.
+ */
+export function pickerModelIds(modelsResponse: Record<string, unknown>): Set<string> | undefined {
+  const sorts = modelsResponse['agentModelSorts'] as { groups?: { modelIds?: string[] }[] }[] | undefined;
+  const tiered = modelsResponse['tieredModelIds'] as Record<string, string[]> | undefined;
+  const ids = [
+    ...(sorts ?? []).flatMap((s) => (s.groups ?? []).flatMap((g) => g.modelIds ?? [])),
+    ...(tiered?.['flash'] ?? []),
+    ...(tiered?.['pro'] ?? []),
+  ];
+  return ids.length > 0 ? new Set(ids) : undefined;
+}
+
+/** `gemini-3.8-flash-tiered` -> `Gemini 3.8 Flash`; tiered models ship without a display name. */
+export function tieredLabel(modelId: string): string {
+  return modelId
+    .replace(/-tiered$/, '')
+    .split('-')
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(' ');
 }
 
 function earliest(a: string | undefined, b: string | undefined): string | undefined {

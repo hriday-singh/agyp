@@ -41,6 +41,25 @@ describe('quota parsing', () => {
     expect(snapshot.promptCredits).toEqual({ available: 40, monthly: 100, remainingPercentage: 0.4 });
   });
 
+  it('shows only the picker lineup when the API provides one', () => {
+    const q = { remainingFraction: 1 };
+    const snapshot = parseSnapshot(
+      {},
+      {
+        agentModelSorts: [{ displayName: 'Recommended', groups: [{ modelIds: ['claude-sonnet-4-6'] }] }],
+        tieredModelIds: { flashLite: ['gemini-3.5-flash-lite'], flash: ['gemini-3.8-flash-tiered'] },
+        models: {
+          'claude-sonnet-4-6': { displayName: 'Claude Sonnet 4.6 (Thinking)', quotaInfo: q },
+          'gemini-3.8-flash-tiered': { quotaInfo: q },
+          'gemini-3.5-flash-lite': { displayName: 'Gemini 3.5 Flash Lite', quotaInfo: q },
+          'gemini-2.5-pro': { displayName: 'Gemini 2.5 Pro', quotaInfo: q },
+        },
+      },
+      'a@b.com',
+    );
+    expect(snapshot.models.map((m) => m.label)).toEqual(['Claude Sonnet 4.6 (Thinking)', 'Gemini 3.8 Flash']);
+  });
+
   it('groups model ids that share a display name into one quota pool', () => {
     const nowMs = Date.parse('2026-08-10T06:00:00Z');
     const snapshot = parseSnapshot(

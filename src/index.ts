@@ -10,7 +10,7 @@
 import * as agy from './agy.js';
 import { UserError, parseArgs } from './args.js';
 import { guestBrowserEnv } from './browser.js';
-import { describeDiff, removeCatalog, trackCatalog } from './catalog.js';
+import { describeDiff, loadCatalog, parseAgyModels, removeCatalog, trackCatalog } from './catalog.js';
 import { fetchEmail, fetchQuota, refreshAccessToken, type Snapshot } from './google.js';
 import { COMMAND_HELP, HELP } from './help.js';
 import * as keyring from './keyring.js';
@@ -389,13 +389,7 @@ async function cmdUsage(target: string | undefined, json: boolean, showModels = 
     if (result.value.projectId && result.value.projectId !== profile.projectId) {
       index = upsert(index, { ...profile, projectId: result.value.projectId });
     }
-    const changed = trackCatalog(result.value.snapshot);
-    if (!json) {
-      console.log(renderSnapshot(result.value.snapshot, showModels) + '\n');
-      if (changed) {
-        info(`  model lineup changed since the last check. Run \`agyp update --check\` for details.\n`);
-      }
-    }
+    if (!json) console.log(renderSnapshot(result.value.snapshot, showModels) + '\n');
   });
 
   recordUsageSnapshots(snapshots);
@@ -442,11 +436,21 @@ async function cmdUpdate(checkOnly: boolean, force: boolean): Promise<void> {
     );
   }
 
+  // The lineup is whatever agy's own picker offers, read from the binary we just installed.
   const stop = spinner('checking model lineup');
-  const { snapshot } = await snapshotFor(profile).finally(stop);
-  const changed = trackCatalog(snapshot);
+  const { code, output } = await agy.runAgyQuiet(['models']).finally(stop);
+  const lineup = parseAgyModels(output);
+  const count = Object.keys(lineup).length;
+  if (count === 0) {
+    const reason = output.split(/\r?\n/).map(agy.finalFrame).filter(Boolean).pop() ?? `agy models exited ${code}`;
+    throw new UserError(`could not read the model lineup from agy: ${reason}`);
+  }
+  const owner = activeEmail(index) ?? profile.email;
+  const firstSighting = loadCatalog(owner) === null;
+  const changed = trackCatalog(owner, lineup);
   if (!changed) {
-    console.log(dim(`models: no changes for ${profile.email} (${snapshot.models.length} available)`));
+    const what = firstSighting ? 'baseline recorded' : 'no changes';
+    console.log(dim(`models: ${what} for ${owner} (${count} available)`));
     return;
   }
   console.log(bold('\nmodel changes:'));

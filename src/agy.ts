@@ -59,12 +59,20 @@ export function readLive(): AgyBlob | null {
   return raw === null ? null : parseBlob(raw);
 }
 
+/** agy >= 1.5.18 skips the keyring entirely when this is set, so the keyring copy may be stale. */
+export function forceFileStorage(): boolean {
+  const v = process.env.AGY_CLI_FORCE_FILE_TOKEN_STORAGE?.trim().toLowerCase();
+  return Boolean(v) && v !== '0' && v !== 'false';
+}
+
 export function readLiveRaw(): string | null {
-  try {
-    const raw = keyring.get(AGY_SERVICE, AGY_ACCOUNT);
-    if (raw) return raw;
-  } catch {
-    // Keyring unavailable; fallback to file
+  if (!forceFileStorage()) {
+    try {
+      const raw = keyring.get(AGY_SERVICE, AGY_ACCOUNT);
+      if (raw) return raw;
+    } catch {
+      // Keyring unavailable; fallback to file
+    }
   }
   const tokenPath = liveTokenFilePath();
   if (existsSync(tokenPath)) {

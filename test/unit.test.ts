@@ -1,10 +1,10 @@
 import { readFileSync } from 'node:fs';
 import { delimiter, join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { agyCommandLines, finalFrame, isAgyBlob, isBgUpdater, parseBlob } from '../src/agy.js';
+import { agyCommandLines, finalFrame, forceFileStorage, isAgyBlob, isBgUpdater, parseBlob } from '../src/agy.js';
 import { chromePath, guestBrowserEnv } from '../src/browser.js';
 import { UserError, parseArgs } from '../src/args.js';
-import { catalogFromSnapshot, describeDiff, diffCatalog, isEmptyDiff } from '../src/catalog.js';
+import { describeDiff, diffCatalog, isEmptyDiff, parseAgyModels } from '../src/catalog.js';
 import { COMMAND_HELP, HELP } from '../src/help.js';
 import { validateLabel } from '../src/index.js';
 import { decodeGoKeyring, winTarget } from '../src/keyring.js';
@@ -186,22 +186,42 @@ describe('agy credential blob', () => {
     expect(() => parseBlob('{"token":{"access_token":"x"}}')).toThrow(/refresh_token/);
     expect(isAgyBlob({ token: null })).toBe(false);
   });
+
+  it('honours AGY_CLI_FORCE_FILE_TOKEN_STORAGE like agy does', () => {
+    const prev = process.env.AGY_CLI_FORCE_FILE_TOKEN_STORAGE;
+    try {
+      for (const [v, want] of [['1', true], ['true', true], ['0', false], ['false', false], ['', false]] as const) {
+        process.env.AGY_CLI_FORCE_FILE_TOKEN_STORAGE = v;
+        expect(forceFileStorage()).toBe(want);
+      }
+      delete process.env.AGY_CLI_FORCE_FILE_TOKEN_STORAGE;
+      expect(forceFileStorage()).toBe(false);
+    } finally {
+      if (prev === undefined) delete process.env.AGY_CLI_FORCE_FILE_TOKEN_STORAGE;
+      else process.env.AGY_CLI_FORCE_FILE_TOKEN_STORAGE = prev;
+    }
+  });
 });
 
 describe('model catalog', () => {
-  it('flattens a snapshot into modelId -> label', () => {
-    const catalog = catalogFromSnapshot({
-      email: 'a@b.com',
-      models: [
-        { label: 'Flash Lite', modelIds: ['gemini-2.5-flash', 'gemini-3.1-flash-lite'], isExhausted: false },
-        { label: 'Claude Opus', modelIds: ['claude-opus-4-6-thinking'], isExhausted: false },
-      ],
+  it('parses `agy models` output and ignores the chatter around it', () => {
+    const out =
+      'Fetching available models...\r\n' +
+      'gemini-4-hydrogen-high\tGemini 4 Hydrogen (High)\r\n' +
+      'gemini-3.8-flash-low\tGemini 3.8 Flash (Low)\n' +
+      'claude-opus-4-6-thinking\tClaude Opus 4.6 (Thinking)\n' +
+      '\n';
+    expect(parseAgyModels(out)).toEqual({
+      'gemini-4-hydrogen-high': 'Gemini 4 Hydrogen (High)',
+      'gemini-3.8-flash-low': 'Gemini 3.8 Flash (Low)',
+      'claude-opus-4-6-thinking': 'Claude Opus 4.6 (Thinking)',
     });
-    expect(catalog).toEqual({
-      'gemini-2.5-flash': 'Flash Lite',
-      'gemini-3.1-flash-lite': 'Flash Lite',
-      'claude-opus-4-6-thinking': 'Claude Opus',
-    });
+  });
+
+  it('yields nothing when agy is signed out, so update can say why instead of "no changes"', () => {
+    const out =
+      'Fetching available models...\nError: Please sign in to view available models. Launch the CLI without arguments to sign in.\n';
+    expect(parseAgyModels(out)).toEqual({});
   });
 
   it('separates additions, removals and renames', () => {

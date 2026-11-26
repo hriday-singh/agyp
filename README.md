@@ -163,7 +163,7 @@ Because an active `agy` session periodically rewrites its keyring entry upon tok
 
 ### Dynamic Model Catalog Tracking
 
-Model availability and names evolve over time. `agyp` hardcodes no model identifiers or display names; it parses API catalog responses dynamically. To keep changes transparent, `agyp` stores the last observed catalog state in `~/.agy-profiler/models.json` and reports detected additions, renames, and retirements after running `agyp update`.
+Model availability and names evolve over time. `agyp` hardcodes no model identifiers or display names; quota views render whatever the API returns. The model lineup itself is read from `agy models`, because `agy` ships its picker catalog inside the binary and it changes with each `agy` release even when the API does not. `agyp` stores the last observed lineup in `~/.agy-profiler/models.json` and reports additions, renames, and retirements after `agyp update` (or `agyp update --check`).
 
 ## Storage Architecture
 

@@ -5,19 +5,25 @@
  * returns, so a rename or removal never breaks it. What it cannot do on its own
  * is tell you the lineup changed, which matters after `agy update`.
  *
- * So we remember the last catalog we saw per account and diff against it. No
+ * The lineup comes from `agy models`, not the Cloud Code API: agy ships its
+ * picker catalog inside the binary (effort variants, new families), so the API
+ * picker stays the same across agy updates while the real lineup moves.
+ *
+ * We remember the last catalog we saw per account and diff against it. No
  * secrets involved, so this lives in a plain file next to the profile index.
  */
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import type { Snapshot } from './google.js';
 import { vaultDir } from './vault.js';
 
 /** modelId -> display name, for the models a user can actually pick. */
 export type Catalog = Record<string, string>;
 
+/** Bumped when the catalog source changes, so stale baselines are dropped instead of diffed. */
+const CATALOG_VERSION = 2;
+
 interface CatalogFile {
-  version: 1;
+  version: typeof CATALOG_VERSION;
   accounts: Record<string, { seenAt: string; models: Catalog }>;
 }
 
@@ -31,23 +37,29 @@ export function catalogPath(): string {
   return join(vaultDir(), 'models.json');
 }
 
-export function catalogFromSnapshot(snapshot: Snapshot): Catalog {
+/** `agy models` prints one `<modelId>\t<display name>` per line; anything else is chatter. */
+export function parseAgyModels(output: string): Catalog {
   const catalog: Catalog = {};
-  for (const model of snapshot.models) {
-    for (const id of model.modelIds) catalog[id] = model.label;
+  for (const raw of output.split(/\r?\n/)) {
+    const line = (raw.split('\r').pop() ?? '').trim();
+    const m = /^([a-z0-9][\w.@-]*)\t+(.+)$/i.exec(line);
+    if (m) catalog[m[1]!] = m[2]!.trim();
   }
   return catalog;
 }
 
 function loadFile(): CatalogFile {
   const path = catalogPath();
-  if (!existsSync(path)) return { version: 1, accounts: {} };
+  const empty: CatalogFile = { version: CATALOG_VERSION, accounts: {} };
+  if (!existsSync(path)) return empty;
   try {
-    const parsed = JSON.parse(readFileSync(path, 'utf8')) as CatalogFile;
-    return { version: 1, accounts: parsed.accounts ?? {} };
+    const parsed = JSON.parse(readFileSync(path, 'utf8')) as Partial<CatalogFile>;
+    // Older versions came from a different source; diffing them would be noise.
+    if (parsed.version !== CATALOG_VERSION) return empty;
+    return { version: CATALOG_VERSION, accounts: parsed.accounts ?? {} };
   } catch {
     // A corrupt catalog is not worth failing a quota check over; start fresh.
-    return { version: 1, accounts: {} };
+    return empty;
   }
 }
 
@@ -112,10 +124,9 @@ export function describeDiff(diff: CatalogDiff): string[] {
 }
 
 /** Record the current catalog and report what moved since last time. */
-export function trackCatalog(snapshot: Snapshot): CatalogDiff | null {
-  const current = catalogFromSnapshot(snapshot);
-  const previous = loadCatalog(snapshot.email);
-  saveCatalog(snapshot.email, current);
+export function trackCatalog(email: string, current: Catalog): CatalogDiff | null {
+  const previous = loadCatalog(email);
+  saveCatalog(email, current);
   if (!previous) return null; // first sighting is not a change
   const diff = diffCatalog(previous, current);
   return isEmptyDiff(diff) ? null : diff;

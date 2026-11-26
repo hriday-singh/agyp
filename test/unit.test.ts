@@ -127,6 +127,18 @@ describe('validateLabel', () => {
     expect(() => validateLabel('1')).toThrow(/numbers only/);
   });
 
+  it('rejects unsafe characters, overlong labels and command names', () => {
+    expect(validateLabel('my.work_2')).toBe('my.work_2');
+    expect(() => validateLabel('bad label with spaces!!')).toThrow(/letters, digits/);
+    expect(() => validateLabel('-work')).toThrow(/starting with/);
+    expect(() => validateLabel('alice@gmail.com')).toThrow(/letters, digits/);
+    expect(() => validateLabel('x'.repeat(33))).toThrow(/1-32/);
+    expect(validateLabel('x'.repeat(32))).toHaveLength(32);
+    expect(() => validateLabel('list')).toThrow(/command name/);
+    expect(() => validateLabel('LS')).toThrow(/command name/);
+    expect(() => validateLabel('auto')).toThrow(/command name/);
+  });
+
   it('rejects duplicate labels', () => {
     expect(() => validateLabel('personal', 'bob@gmail.com', index)).toThrow(/already used/);
     expect(validateLabel('personal', 'alice@gmail.com', index)).toBe('personal');

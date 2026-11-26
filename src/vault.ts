@@ -17,7 +17,7 @@ import { parseBlob, readLiveRaw, writeLive } from './agy.js';
 import { UserError } from './args.js';
 import { fetchQuota, type Snapshot } from './google.js';
 import * as keyring from './keyring.js';
-import { findBestMatch, formatSuggestion } from './suggest.js';
+import { ALL_COMMAND_NAMES, COMMAND_ALIASES, findBestMatch, formatSuggestion } from './suggest.js';
 
 export const VAULT_SERVICE = 'agy-profiler';
 /** Holds the outgoing credential while `agyp login` runs, so a crash can't lose it. */
@@ -175,6 +175,14 @@ export function validateLabel(label: string, currentEmail?: string, index?: Vaul
   const trimmed = label.trim();
   if (/^\d+$/.test(trimmed)) {
     throw new UserError('labels cannot be numbers only');
+  }
+  // Labels are typed as targets (`agyp use work`, `agyp work login`), so keep them shell- and parser-safe.
+  if (!/^[a-z0-9][a-z0-9._-]{0,31}$/i.test(trimmed)) {
+    throw new UserError('labels must be 1-32 characters: letters, digits, ".", "_" or "-", starting with a letter or digit');
+  }
+  const lower = trimmed.toLowerCase();
+  if (lower === 'auto' || lower === 'best' || ALL_COMMAND_NAMES.includes(lower) || Object.hasOwn(COMMAND_ALIASES, lower)) {
+    throw new UserError(`"${trimmed}" is a command name and cannot be used as a label`);
   }
   if (index) {
     const duplicate = index.profiles.find(

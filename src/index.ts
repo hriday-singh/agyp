@@ -7,6 +7,7 @@
  * "swap that entry", and everything else in this file exists to make sure the
  * swap never loses or crosses tokens between accounts.
  */
+import { readFileSync } from 'node:fs';
 import * as agy from './agy.js';
 import { UserError, parseArgs } from './args.js';
 import { guestBrowserEnv } from './browser.js';
@@ -67,8 +68,9 @@ async function syncBack(index: VaultIndex): Promise<VaultIndex> {
   let email: string;
   try {
     email = await fetchEmail(await refreshAccessToken(blob.token.refresh_token));
-  } catch {
-    warn('agy holds a credential this tool does not recognise and could not identify (offline?); left untouched');
+  } catch (err) {
+    const reason = err instanceof Error ? err.message : String(err);
+    warn(`agy holds a credential this tool does not recognise and could not identify (${reason}); left untouched`);
     return index;
   }
 
@@ -579,7 +581,7 @@ function cmdDoctor(): void {
   line(Boolean(path), `agy binary: ${path ?? 'not found on PATH'}`);
 
   const major = Number(process.versions.node.split('.')[0]);
-  line(major >= 18, `node ${process.versions.node}${major >= 18 ? '' : ' (need >= 18 for global fetch)'}`);
+  line(major >= 20, `node ${process.versions.node}${major >= 20 ? '' : ' (need >= 20.12, see package.json engines)'}`);
 
   try {
     const index = loadIndex();
@@ -606,6 +608,12 @@ function cmdDoctor(): void {
 async function main(): Promise<void> {
   const { command, positional, flags, options, passthrough } = parseArgs(process.argv.slice(2));
   const primaryCommand = COMMAND_ALIASES[command] ?? command;
+
+  if (flags.has('version') || command === '-v' || command === 'version') {
+    const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as { version: string };
+    console.log(`agyp ${pkg.version}`);
+    return;
+  }
 
   if (flags.has('help') || command === 'help') {
     const topic = command === 'help' ? positional[0] : command;

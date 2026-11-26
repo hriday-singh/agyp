@@ -34,8 +34,8 @@ export interface ModelQuota {
   /** Every model id that shares this label; they share one quota pool. */
   modelIds: string[];
   /**
-   * Fraction of the pool left. Undefined when the API omits it, which it does
-   * for pools it has nothing to report on; shown as "n/a" rather than guessed.
+   * Fraction of the pool left. Undefined only for unmetered pools (no fraction
+   * and no reset time); see `fractionOf` for how an omitted 0 is recovered.
    */
   remainingPercentage?: number;
   isExhausted: boolean;
@@ -52,6 +52,8 @@ export interface QuotaBucket {
   resetTime?: string;
   timeUntilResetMs?: number;
   description?: string;
+  /** The API pauses a bucket (e.g. the 5h window once the weekly one is spent). */
+  disabled?: boolean;
 }
 
 export interface QuotaGroup {
@@ -72,6 +74,16 @@ export interface Snapshot {
   promptCredits?: PromptCredits;
   models: ModelQuota[];
   quotaGroups?: QuotaGroup[];
+}
+
+/**
+ * The API speaks proto3 JSON, which omits zero values: an exhausted pool comes
+ * back as `{ resetTime }` with no `remainingFraction`. A reset time with no
+ * fraction is therefore 0; neither means an unmetered pool (undefined).
+ */
+export function fractionOf(q: { remainingFraction?: unknown; resetTime?: unknown }): number | undefined {
+  if (typeof q.remainingFraction === 'number') return q.remainingFraction;
+  return typeof q.resetTime === 'string' ? 0 : undefined;
 }
 
 /** Desktop OAuth client secrets embedded in a binary, in file order, deduped. */
@@ -287,7 +299,7 @@ export function parseQuotaGroups(
       const window = typeof rawB['window'] === 'string' ? rawB['window'] : undefined;
       const resetTime = typeof rawB['resetTime'] === 'string' ? rawB['resetTime'] : undefined;
       const resetMs = resetTime ? new Date(resetTime).getTime() - now : NaN;
-      const remainingFraction = typeof rawB['remainingFraction'] === 'number' ? rawB['remainingFraction'] : undefined;
+      const remainingFraction = fractionOf(rawB);
       const desc = typeof rawB['description'] === 'string' ? rawB['description'] : undefined;
 
       buckets.push({
@@ -298,6 +310,7 @@ export function parseQuotaGroups(
         resetTime,
         timeUntilResetMs: Number.isFinite(resetMs) && resetMs > 0 ? resetMs : undefined,
         description: desc,
+        disabled: rawB['disabled'] === true || undefined,
       });
     }
 
@@ -337,6 +350,7 @@ export function matchModelToGroup(modelId: string, label: string, groups: QuotaG
 interface RawModel {
   displayName?: string;
   label?: string;
+  recommended?: boolean;
   quotaInfo?: { remainingFraction?: number; isExhausted?: boolean; resetTime?: string };
 }
 
@@ -359,26 +373,28 @@ export function parseSnapshot(
     const existing = grouped.get(label);
 
     const matchedGroup = quotaGroups ? matchModelToGroup(modelId, label, quotaGroups) : undefined;
-    let remainingFraction = quota?.remainingFraction;
+    let remainingFraction = quota ? fractionOf(quota) : undefined;
     let resetTime = quota?.resetTime;
-    let isExhausted = Boolean(quota?.isExhausted || quota?.remainingFraction === 0);
+    let isExhausted = Boolean(quota?.isExhausted || remainingFraction === 0);
+    // A paused bucket's fraction is stale; it does not limit anything right now.
+    const liveBuckets = matchedGroup?.buckets.filter((b) => !b.disabled) ?? [];
 
-    if (matchedGroup && matchedGroup.buckets.length > 0) {
-      const minBucket = matchedGroup.buckets.reduce(
+    if (matchedGroup && liveBuckets.length > 0) {
+      const minBucket = liveBuckets.reduce(
         (min, b) => ((b.remainingFraction ?? 1) < (min.remainingFraction ?? 1) ? b : min),
-        matchedGroup.buckets[0]!,
+        liveBuckets[0]!,
       );
       remainingFraction = minBucket.remainingFraction;
       if ((minBucket.remainingFraction ?? 1) < 1) {
         resetTime = minBucket.resetTime;
       } else {
-        const futureBuckets = matchedGroup.buckets.filter((b) => b.timeUntilResetMs !== undefined);
+        const futureBuckets = liveBuckets.filter((b) => b.timeUntilResetMs !== undefined);
         if (futureBuckets.length > 0) {
           futureBuckets.sort((a, b) => (a.timeUntilResetMs ?? 0) - (b.timeUntilResetMs ?? 0));
           resetTime = futureBuckets[0]!.resetTime;
         }
       }
-      isExhausted = matchedGroup.buckets.some((b) => b.remainingFraction !== undefined && b.remainingFraction <= 0);
+      isExhausted = liveBuckets.some((b) => b.remainingFraction !== undefined && b.remainingFraction <= 0);
     }
 
     const mergedResetTime = earliest(existing?.resetTime, resetTime);
@@ -421,25 +437,33 @@ export function parseSnapshot(
 }
 
 /**
- * The models agy actually offers in its picker (`agy models`): `agentModelSorts`
- * plus the flash/pro tiered Gemini ids. The rest of `models` is legacy or background plumbing
- * (commit messages, web search, image gen). Undefined if the API omits both.
+ * The models agy actually offers in its picker (`agy models`): `agentModelSorts`,
+ * the flash/pro tiered Gemini ids, and recommended models the API leaves unnamed
+ * because agy names them itself (`gemini-4-hydrogen-sonar` -> Gemini 4 Hydrogen).
+ * The rest of `models` is legacy or background plumbing (flashLite, commit
+ * messages, web search, image gen). Undefined if the API omits all of these.
  */
 export function pickerModelIds(modelsResponse: Record<string, unknown>): Set<string> | undefined {
   const sorts = modelsResponse['agentModelSorts'] as { groups?: { modelIds?: string[] }[] }[] | undefined;
   const tiered = modelsResponse['tieredModelIds'] as Record<string, string[]> | undefined;
+  const models = (modelsResponse['models'] ?? {}) as Record<string, RawModel>;
   const ids = [
     ...(sorts ?? []).flatMap((s) => (s.groups ?? []).flatMap((g) => g.modelIds ?? [])),
     ...(tiered?.['flash'] ?? []),
     ...(tiered?.['pro'] ?? []),
   ];
-  return ids.length > 0 ? new Set(ids) : undefined;
+  if (ids.length === 0) return undefined;
+  // ponytail: heuristic; switch to `agy models` id prefixes if Google starts naming these.
+  for (const [id, m] of Object.entries(models)) {
+    if (m.recommended && !m.displayName && m.quotaInfo && shouldShowModel(id, { quotaInfo: m.quotaInfo, displayName: id })) ids.push(id);
+  }
+  return new Set(ids);
 }
 
-/** `gemini-3.8-flash-tiered` -> `Gemini 3.8 Flash`; tiered models ship without a display name. */
+/** `gemini-3.8-flash-tiered` -> `Gemini 3.8 Flash`; these ids ship without a display name. */
 export function tieredLabel(modelId: string): string {
   return modelId
-    .replace(/-tiered$/, '')
+    .replace(/-(tiered|sonar)$/, '')
     .split('-')
     .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
     .join(' ');

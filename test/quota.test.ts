@@ -66,7 +66,7 @@ describe('quota parsing', () => {
       {},
       {
         models: {
-          'gemini-2.5-flash': { displayName: 'Flash Lite', quotaInfo: { resetTime: '2026-08-11T18:00:00Z' } },
+          'gemini-2.5-flash': { displayName: 'Flash Lite', quotaInfo: { remainingFraction: 0.8, resetTime: '2026-08-11T18:00:00Z' } },
           'gemini-3.1-flash-lite': {
             displayName: 'Flash Lite',
             quotaInfo: { remainingFraction: 0.25, resetTime: '2026-08-10T18:00:00Z' },
@@ -294,6 +294,50 @@ describe('quota parsing', () => {
     expect(model?.isExhausted).toBe(true);
     expect(model?.resetTime).toBe('2026-09-06T18:30:00Z');
     expect(model?.timeUntilResetMs).toBe(3 * 60 * 60 * 1000);
+  });
+
+  it('reads the agy 1.5.x API shape: omitted zeros, paused buckets, unnamed picker models', () => {
+    const nowMs = Date.parse('2026-11-26T10:00:00Z');
+    // Trimmed from a live fetchAvailableModels + retrieveUserQuotaSummary response.
+    const models = {
+      agentModelSorts: [{ displayName: 'Recommended', groups: [{ modelIds: ['claude-sonnet-4-6', 'gpt-oss-120b-medium'] }] }],
+      tieredModelIds: { flashLite: ['gemini-3.5-flash-lite'], flash: ['gemini-3.8-flash-tiered'], pro: ['gemini-3.8-flash-tiered'] },
+      models: {
+        // proto3 JSON drops remainingFraction when it is 0
+        'claude-sonnet-4-6': { displayName: 'Claude Sonnet 4.6 (Thinking)', recommended: true, quotaInfo: { resetTime: '2026-12-02T20:32:00Z' } },
+        'gpt-oss-120b-medium': { displayName: 'GPT-OSS 120B (Medium)', recommended: true, quotaInfo: { resetTime: '2026-12-02T20:32:00Z' } },
+        'gemini-3.8-flash-tiered': { recommended: true, quotaInfo: { resetTime: '2026-11-26T12:02:07Z' } },
+        'gemini-4-hydrogen-sonar': { recommended: true, quotaInfo: { resetTime: '2026-11-26T12:02:07Z' } },
+        'gemini-3.5-flash-lite': { displayName: 'Gemini 3.5 Flash Lite', recommended: true, quotaInfo: { remainingFraction: 1 } },
+        tab_flash_lite_preview: { quotaInfo: { remainingFraction: 1 } },
+      },
+    };
+    const summary = {
+      groups: [
+        {
+          displayName: 'Claude and GPT models',
+          description: 'Models within this group: Claude Sonnet 4.6, Claude Opus 4.6, GPT-OSS 120B',
+          buckets: [
+            { bucketId: '3p-weekly', displayName: 'Weekly Limit Remaining', window: 'weekly', resetTime: '2026-12-02T20:32:00Z', remainingFraction: 0 },
+            { bucketId: '3p-5h', displayName: 'Five Hour Limit Remaining', window: '5h', resetTime: '2026-11-26T15:41:50Z', disabled: true, remainingFraction: 1 },
+          ],
+        },
+      ],
+    };
+
+    const snap = parseSnapshot({ paidTier: { name: 'Google AI Pro' } }, models, 'a@b.com', nowMs, summary);
+    const byLabel = Object.fromEntries(snap.models.map((m) => [m.label, m]));
+
+    expect(Object.keys(byLabel).sort()).toEqual(['Claude Sonnet 4.6 (Thinking)', 'GPT-OSS 120B (Medium)', 'Gemini 3.8 Flash', 'Gemini 4 Hydrogen']);
+    expect(byLabel['Gemini 3.8 Flash']).toMatchObject({ remainingPercentage: 0, isExhausted: true });
+    expect(byLabel['Gemini 4 Hydrogen']).toMatchObject({ remainingPercentage: 0, isExhausted: true });
+    // the paused 5h bucket must not mask the spent weekly one, nor offer its reset time
+    expect(byLabel['Claude Sonnet 4.6 (Thinking)']).toMatchObject({ remainingPercentage: 0, isExhausted: true, resetTime: '2026-12-02T20:32:00Z' });
+    expect(snap.quotaGroups![0]!.buckets[1]!.disabled).toBe(true);
+
+    const rendered = renderSnapshot(snap);
+    expect(rendered).toMatch(/Five Hour Limit Remaining\s+─+ paused/);
+    expect(rendered).not.toContain('n/a');
   });
 
   it('defaults CLOUDCODE.baseUrl to daily-cloudcode-pa.googleapis.com', () => {

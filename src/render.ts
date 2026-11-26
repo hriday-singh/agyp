@@ -111,11 +111,15 @@ export function renderSnapshot(snapshot: Snapshot, showModels = false): string {
       lines.push(`\n  ${bold(cyan(group.displayName))}`);
       for (const bucket of group.buckets) {
         const fraction = bucket.remainingFraction;
+        const name = bucket.displayName.length > 30 ? bucket.displayName.slice(0, 29) + '…' : bucket.displayName;
+        if (bucket.disabled) {
+          lines.push(`    ${name.padEnd(32)} ${dim('─'.repeat(20))} ${dim('paused')}`);
+          continue;
+        }
         const gauge = fraction === undefined ? dim('─'.repeat(20)) : bar(fraction);
         const pct = fraction === undefined ? dim('   n/a') : `${(fraction * 100).toFixed(0).padStart(4)}%`;
         const reset = resetLabel(fraction, bucket.timeUntilResetMs);
         const flag = bucket.remainingFraction !== undefined && bucket.remainingFraction <= 0 ? red(' EXHAUSTED') : '';
-        const name = bucket.displayName.length > 30 ? bucket.displayName.slice(0, 29) + '…' : bucket.displayName;
         lines.push(`    ${name.padEnd(32)} ${gauge} ${pct}  ${reset}${flag}`);
       }
       if (group.description) {

@@ -11,14 +11,13 @@ $ agyp list
 
 $ agyp usage
 alex.personal@gmail.com (Google AI Pro)
-  Gemini Models
-    Weekly Limit Remaining           ████████████████░░░░   79%  resets in 1d 11h
-    Five Hour Limit Remaining        ████████████████████  100%
-    Models within this group: Gemini Flash, Gemini Pro
   Claude and GPT models
-    Weekly Limit Remaining           ████████████████████  100%
-    Five Hour Limit Remaining        ████████████████████  100%
-    Models within this group: Claude Opus, Claude Sonnet, GPT-OSS
+    Weekly Limit Remaining           ░░░░░░░░░░░░░░░░░░░░    0%  resets in 6d 9h EXHAUSTED
+    Five Hour Limit Remaining        ──────────────────── paused
+    Models within this group: Claude Sonnet 4.6, Claude Opus 4.6, GPT-OSS 120B
+  Additional Models:
+    Gemini 3.8 Flash                 ████████████████████  100%
+    Gemini 4 Hydrogen                ████████████████████  100%
 ...
 (pass --models to view individual models mapped to pools)
 ```
